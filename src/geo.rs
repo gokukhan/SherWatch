@@ -4,29 +4,38 @@ use std::net::IpAddr;
 use std::path::Path;
 
 pub struct Geo {
-    reader: Option<maxminddb::Reader<Vec<u8>>>,
+    reader: parking_lot::RwLock<Option<maxminddb::Reader<Vec<u8>>>>,
 }
 
 impl Geo {
+    /// Opens the database when present; otherwise starts empty and `load` can fill it in later.
     pub fn open(path: &Path) -> Self {
+        let g = Self { reader: parking_lot::RwLock::new(None) };
+        if path.exists() {
+            g.load(path);
+        } else {
+            tracing::warn!("GeoIP database not present yet; destinations have no location until it is downloaded");
+        }
+        g
+    }
+
+    pub fn load(&self, path: &Path) {
         match maxminddb::Reader::open_readfile(path) {
             Ok(r) => {
                 tracing::info!("GeoIP database loaded from {}", path.display());
-                Self { reader: Some(r) }
+                *self.reader.write() = Some(r);
             }
-            Err(e) => {
-                tracing::warn!("GeoIP database not available ({e}); destinations will have no location");
-                Self { reader: None }
-            }
+            Err(e) => tracing::warn!("GeoIP database could not be opened ({e})"),
         }
     }
 
     pub fn available(&self) -> bool {
-        self.reader.is_some()
+        self.reader.read().is_some()
     }
 
     pub fn lookup(&self, ip: IpAddr) -> GeoInfo {
-        let Some(r) = &self.reader else { return GeoInfo::default() };
+        let guard = self.reader.read();
+        let Some(r) = guard.as_ref() else { return GeoInfo::default() };
         let Ok(result) = r.lookup(ip) else { return GeoInfo::default() };
         let Ok(Some(city)) = result.decode::<geoip2::City>() else { return GeoInfo::default() };
         let country = city.country.iso_code.map(|s| s.to_string());

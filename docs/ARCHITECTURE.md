@@ -142,5 +142,17 @@ mutate. `parking_lot` locks are not reentrant.
 | GET | `/api/export/connections.csv`, `alerts.csv`, `alerts.json`, `processes.json`, `dns.csv` | exports |
 | WS | `/ws` | `hello`, `tick` (1 Hz), `alert`, `dns` messages |
 
-The server binds to 127.0.0.1 only. There is no authentication; do not change the bind
-address to a network interface without putting something in front of it.
+The server binds to 127.0.0.1 only. There is no authentication, but a middleware rejects
+any request whose Host header is not the local bind address or whose Origin (when a
+browser sends one) is not this server, which blocks DNS-rebinding and cross-site requests
+from other pages open in the user's browser. Do not change the bind address to a network
+interface without putting something in front of it.
+
+`POST /api/shutdown` makes the instance exit after closing its ETW session; a newly
+started instance uses it to take over the port from an older one (latest launch wins).
+
+### Startup order
+
+Config, database, GeoIP (opened if present), feeds parsed from disk, workers, HTTP server.
+GeoIP download (first run) and the first feed refresh run in a background task after the
+server is listening, so the dashboard never waits on the network.

@@ -7,8 +7,16 @@ permission; accept it to get byte counts and DNS capture. A console window shows
 closing it stops the monitor. The dashboard opens at <http://127.0.0.1:8787/> and can be
 reopened at any time in any browser on this PC.
 
-The first start downloads the GeoIP database (about 120 MB) and the threat feeds. Later
-starts are instant.
+The first start downloads the GeoIP database (about 120 MB) and the threat feeds in the
+background; the dashboard is usable immediately and locations fill in once the download
+finishes. Later starts are instant.
+
+Starting the app while another copy is already running (for example an un-elevated test
+instance) hands the port over to the new copy: the latest launch wins. Ctrl+C in the console
+stops the monitor and closes its Windows trace session cleanly.
+
+The first run on a PC learns quietly: "new application on the network" alerts (R13) are
+suppressed for the first hour so the known-application list can fill up.
 
 ## The sidebar
 
@@ -38,10 +46,10 @@ The command-center view.
 - **Live destinations**: the 3D globe. Blue dots are destinations, sized by traffic. Arcs
   run from your location (the pulsing ring) to hosts that were active in the last 30
   seconds. Arc colour follows risk: blue to green is normal, orange is elevated, red is a
-  threat-intel match or critical risk. Countries with active connections are tinted blue;
-  countries hosting a threat-feed match are tinted red. City labels show the number of
-  hosts in a cluster. Hover anything to pause rotation and read details; click a dot to
-  jump to its connections.
+  threat-intel match or critical risk. Countries are drawn as solid shapes with names:
+  grey when quiet, blue when they host active connections, red when they host a
+  threat-feed match. City labels show the number of hosts in a cluster. Hover anything
+  to pause rotation and read details; click a dot to jump to its connections.
 - **Latest alerts**: the newest open alerts. Click one to open its process.
 - **Top talkers**: processes by bytes this session. Click a bar to open the process.
 - **Throughput**: upload and download over the last five minutes, one second resolution.
@@ -173,6 +181,9 @@ after 30 days.
   source (config, feeds.json or manifest), entry count, last update and status.
   **Refresh now** forces a download.
 - **Firewall blocks**: rules the app created, with **remove**. Block any IP by hand.
+- **Notifications**: opt in to Windows desktop notifications for critical and high alerts
+  while the dashboard tab is open (uses the browser's notification permission).
+- **Trusted programs**: the hash-pinned trust list with revoke buttons.
 - **Capture status**: administrator, ETW event counter, GeoIP, home location, start time,
   project folder.
 - **Configuration**: the effective settings (API key masked).

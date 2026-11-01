@@ -96,6 +96,8 @@ pub struct AppState {
     pub inventory: RwLock<InventoryState>,
     /// "exe|proto|port" combinations that already raised a listener alert this session.
     pub seen_listeners: DashSet<String>,
+    /// True when the database knew almost no applications at startup (first run on this PC).
+    pub first_run: bool,
     /// Trusted executables: lowercase path -> sha256 (from config.toml plus data/trusted.json).
     pub trusted: RwLock<HashMap<String, String>>,
 
@@ -168,6 +170,7 @@ impl AppState {
         for k in db.load_known_apps() {
             known.insert(k.exe.to_ascii_lowercase());
         }
+        let first_run = known.len() < 10;
         let recent = db.load_recent_alerts(500);
         let seq = db.next_alert_id();
         let cfg_trusted = cfg.analysis.trusted.clone();
@@ -209,6 +212,7 @@ impl AppState {
             home: RwLock::new(None),
             inventory: RwLock::new(InventoryState::default()),
             seen_listeners: DashSet::new(),
+            first_run,
             trusted: RwLock::new(load_trusted(&cfg_trusted, &root_for_trusted)),
             sec_out: AtomicU64::new(0),
             sec_in: AtomicU64::new(0),
@@ -289,8 +293,9 @@ impl AppState {
                 self.known_apps.insert(key);
                 let now = now_ms();
                 self.db.send(DbMsg::KnownApp { exe: exe.clone(), name: name.clone(), first_seen: now });
-                // Only alert when the database already had history (first run would flood).
-                if self.known_apps.len() > 5 && now - self.started > 20_000 {
+                // Only alert when the database already had history; the first run learns quietly for an hour.
+                let learning = self.first_run && now - self.started < 3_600_000;
+                if !learning && now - self.started > 20_000 {
                     self.push_alert(
                         Severity::Info,
                         "R13-new-app",
@@ -550,9 +555,9 @@ impl AppState {
             }
         }
         self.listeners.retain(|k, _| seen_listeners.contains(k));
-        // Processes with no connections for 10 minutes are dropped from memory.
+        // Processes with no connections for an hour (10 minutes once exited) are dropped from memory.
         let active: std::collections::HashSet<u32> = self.conns.iter().map(|c| c.pid).collect();
-        self.procs.retain(|pid, p| active.contains(pid) || now - p.last_seen < 600_000);
+        self.procs.retain(|pid, p| active.contains(pid) || now - p.last_seen < if p.alive { 3_600_000 } else { 600_000 });
         self.beacons.retain(|(pid, _), v| self.procs.contains_key(pid) && v.back().map(|t| now - t < 4 * 3600_000).unwrap_or(false));
         self.dst_window.retain(|pid, _| self.procs.contains_key(pid));
     }
@@ -630,6 +635,9 @@ impl AppState {
                     cd.insert(key, (now, id));
                     return false;
                 }
+            }
+            if cd.len() > 5000 {
+                cd.retain(|_, (t, _)| now - *t < cooldown_ms);
             }
             let id = self.alert_seq.fetch_add(1, Ordering::SeqCst) + 1;
             cd.insert(key, (now, id));
@@ -746,7 +754,8 @@ impl AppState {
         top.sort_by(|a, b| (b.rate_out + b.rate_in).partial_cmp(&(a.rate_out + a.rate_in)).unwrap());
         top.truncate(8);
 
-        let sample = Sample { ts: now, bytes_out: out, bytes_in: inn, conns: conn_count, procs: self.procs.len() };
+        let alive = self.procs.iter().filter(|p| p.alive).count();
+        let sample = Sample { ts: now, bytes_out: out, bytes_in: inn, conns: conn_count, procs: alive };
         {
             let mut s = self.series.write();
             s.push_back(sample.clone());
@@ -827,7 +836,7 @@ impl AppState {
             total_in: self.total_in.load(Ordering::Relaxed),
             conns: self.conns.len(),
             public_conns: public,
-            procs: self.procs.len(),
+            procs: self.procs.iter().filter(|p| p.alive).count(),
             listeners: self.listeners.len(),
             alerts_by_sev: by_sev,
             unacked,

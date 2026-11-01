@@ -31,7 +31,12 @@ pub fn block_exe(state: &AppState, exe: &str) -> Result<String, String> {
     if exe.is_empty() || !std::path::Path::new(exe).exists() {
         return Err("executable path not found".into());
     }
-    let rule = rule_name("app", std::path::Path::new(exe).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default().as_str());
+    // Include a short hash of the full path so two programs with the same file name get distinct rules.
+    let digest = {
+        use sha2::Digest;
+        hex::encode(sha2::Sha256::digest(exe.to_ascii_lowercase().as_bytes()))[..8].to_string()
+    };
+    let rule = rule_name("app", &format!("{} {digest}", std::path::Path::new(exe).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()));
     for dir in ["out", "in"] {
         run(
             "netsh",

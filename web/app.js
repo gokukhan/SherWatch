@@ -182,10 +182,17 @@ function setUnacked(n) {
   b.hidden = n === 0; b.textContent = n;
 }
 
+function desktopNotify(a) {
+  try {
+    if (localStorage.getItem('nm-notify') !== '1' || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const n = new Notification(`NetMonitor: ${a.severity.toUpperCase()} alert`, { body: a.title, tag: 'nm-' + a.id, silent: a.severity !== 'critical' });
+    n.onclick = () => { window.focus(); setView('alerts'); n.close(); };
+  } catch {}
+}
 function onAlert(a) {
   S.alerts.unshift(a);
   if (S.alerts.length > 500) S.alerts.pop();
-  if (a.severity === 'critical' || a.severity === 'high') toast(a.title, a.detail, 'sev-' + a.severity);
+  if (a.severity === 'critical' || a.severity === 'high') { toast(a.title, a.detail, 'sev-' + a.severity); desktopNotify(a); }
   renderOverviewAlerts();
   if (S.view === 'alerts') renderAlerts();
   updateSeverityPills();
@@ -367,12 +374,23 @@ function whereCell(c) {
 // ---------- globe ----------
 let globe = null, globeHost = null, worldFeatures = null, globeCountries = new Set(), globeIntelCountries = new Set();
 let countryLabels = [], globeHoverPaused = false;
+const ATLAS_ALIAS = { 'united states': 'United States of America', 'russian federation': 'Russia', 'korea, republic of': 'South Korea', 'korea, democratic people\'s republic of': 'North Korea', 'czech republic': 'Czechia', 'viet nam': 'Vietnam', 'türkiye': 'Turkey', 'turkiye': 'Turkey', 'iran, islamic republic of': 'Iran', 'taiwan, province of china': 'Taiwan', 'bosnia and herzegovina': 'Bosnia and Herz.', 'dominican republic': 'Dominican Rep.', 'syrian arab republic': 'Syria', 'lao people\'s democratic republic': 'Laos', 'moldova, republic of': 'Moldova', 'bolivia, plurinational state of': 'Bolivia', 'venezuela, bolivarian republic of': 'Venezuela', 'tanzania, united republic of': 'Tanzania', 'congo, the democratic republic of the': 'Dem. Rep. Congo', 'congo': 'Congo', 'central african republic': 'Central African Rep.', 'south sudan': 'S. Sudan', 'palestine, state of': 'Palestine', 'brunei darussalam': 'Brunei', 'equatorial guinea': 'Eq. Guinea', 'solomon islands': 'Solomon Is.', 'eswatini': 'eSwatini', 'western sahara': 'W. Sahara', 'falkland islands (malvinas)': 'Falkland Is.', 'hong kong': 'China', 'macao': 'China', 'singapore': 'Malaysia', 'north macedonia': 'North Macedonia', 'côte d\'ivoire': "Côte d'Ivoire", 'cote d\'ivoire': "Côte d'Ivoire", 'united kingdom': 'United Kingdom', 'timor-leste': 'Timor-Leste', 'bahamas': 'Bahamas', 'gambia': 'Gambia', 'netherlands': 'Netherlands', 'somalia': 'Somalia' };
+const atlasNames = new Set();
+function atlasName(geoName) {
+  if (!geoName) return null;
+  if (atlasNames.has(geoName)) return geoName;
+  const key = geoName.toLowerCase().trim();
+  if (ATLAS_ALIAS[key]) return ATLAS_ALIAS[key];
+  const first = key.split(/[ ,(]/)[0];
+  if (first.length >= 5) { for (const n of atlasNames) if (n.toLowerCase().startsWith(first)) return n; }
+  return null;
+}
 const geoObjects = new Map(); // ip -> stable object so globe.gl can diff instead of re-creating
 async function initGlobe() {
   try {
     const world = await (await fetch('vendor/countries-110m.json')).json();
-    // Antarctica contains the pole, which the h3 hex tiler cannot handle; it is also never a destination.
     worldFeatures = topojson.feature(world, world.objects.countries).features.filter((f) => f.properties?.name !== 'Antarctica');
+    worldFeatures.forEach((f) => atlasNames.add(f.properties?.name));
     // Country name labels at centroids; tiny countries are skipped unless they carry traffic.
     countryLabels = worldFeatures.map((f) => { const [lon, lat] = d3.geoCentroid(f); return { kind: 'country', name: f.properties?.name || '', lat, lon, area: d3.geoArea(f) }; }).filter((c) => c.name);
   } catch (e) { console.warn('world map unavailable', e); worldFeatures = []; }
@@ -381,16 +399,19 @@ async function initGlobe() {
   globe = Globe({ animateIn: true })(document.createElement('div'))
     .backgroundColor('rgba(0,0,0,0)')
     .showAtmosphere(true).atmosphereColor('#3987e5').atmosphereAltitude(0.16)
-    .hexPolygonsData(worldFeatures).hexPolygonResolution(3).hexPolygonMargin(0.4).hexPolygonUseDots(true)
-    .hexPolygonColor((f) => { const n = f.properties?.name; return globeIntelCountries.has(n) ? 'rgba(208,59,59,0.85)' : globeCountries.has(n) ? 'rgba(57,135,229,0.85)' : 'rgba(110,115,125,0.45)'; })
-    .hexPolygonLabel((f) => `<div class="globe-tip">${esc(f.properties?.name || '')}</div>`)
+    // Solid country polygons (the hex tiler drops countries that cross the antimeridian).
+    .polygonsData(worldFeatures).polygonAltitude(0.006)
+    .polygonCapColor((f) => { const n = f.properties?.name; return globeIntelCountries.has(n) ? 'rgba(208,59,59,0.75)' : globeCountries.has(n) ? 'rgba(57,135,229,0.55)' : 'rgba(78,84,96,0.55)'; })
+    .polygonSideColor(() => 'rgba(0,0,0,0)').polygonStrokeColor(() => 'rgba(195,194,183,0.35)')
+    .polygonLabel((f) => `<div class="globe-tip">${esc(f.properties?.name || '')}</div>`)
+    .polygonsTransitionDuration(0)
     .arcsData([]).arcStartLat('sLat').arcStartLng('sLon').arcEndLat('lat').arcEndLng('lon')
     .arcColor((d) => d.risk >= 60 ? [C.critical, C.critical] : d.risk >= 25 ? [C.serious, C.serious] : [C.s1, C.s3])
     .arcAltitudeAutoScale(0.4).arcStroke(0.45).arcDashLength(0.4).arcDashGap(0.25).arcDashAnimateTime((d) => d.risk >= 25 ? 900 : 1800)
     .pointsData([]).pointLat('lat').pointLng('lon').pointColor((d) => riskColor(d.risk)).pointAltitude((d) => 0.01 + Math.min(0.15, Math.log10(1 + d.bytes_in + d.bytes_out) / 60)).pointRadius(0.32)
     .pointLabel((d) => `<div class="globe-tip"><b>${esc(d.hostname || d.ip)}</b>${d.owner ? ` · ${esc(d.owner)}` : ''}<br>${esc(d.ip)} · ${esc([d.city, d.country_name].filter(Boolean).join(', '))}<br>${esc((d.procs || []).join(', '))}<br>↑ ${fmtBytes(d.bytes_out)} · ↓ ${fmtBytes(d.bytes_in)}${d.intel ? '<br><b style="color:' + C.critical + '">' + esc(d.intel) + '</b>' : ''}</div>`)
     .onPointClick((d) => { setView('connections'); $('#global-search').value = d.ip; refreshView(true); })
-    .onPointHover(hoverPause).onHexPolygonHover(hoverPause).onArcHover(hoverPause).onLabelHover(hoverPause)
+    .onPointHover(hoverPause).onPolygonHover(hoverPause).onArcHover(hoverPause).onLabelHover(hoverPause)
     .arcsTransitionDuration(0).pointsTransitionDuration(0).labelsTransitionDuration(0)
     .labelsData([]).labelLat('lat').labelLng('lon')
     .labelText((d) => d.kind === 'country' ? d.name : d.text)
@@ -445,11 +466,10 @@ function updateGlobe() {
   globeCountries = new Set(); globeIntelCountries = new Set();
   const nameByCc = new Map();
   for (const d of dests) { if (d.country_name) { nameByCc.set(d.country, d.country_name); (d.intel ? globeIntelCountries : globeCountries).add(d.country_name); } }
-  // world-atlas names differ for a few countries; cover the common ones
-  const alias = { 'United States': 'United States of America', 'Czechia': 'Czechia', 'Russia': 'Russia', 'South Korea': 'South Korea', 'Viet Nam': 'Vietnam', 'Türkiye': 'Turkey', 'Iran, Islamic Republic of': 'Iran', 'Korea, Republic of': 'South Korea', 'Taiwan, Province of China': 'Taiwan', 'United Kingdom': 'United Kingdom' };
-  for (const n of [...globeCountries]) if (alias[n]) globeCountries.add(alias[n]);
-  for (const n of [...globeIntelCountries]) if (alias[n]) globeIntelCountries.add(alias[n]);
-  globe.hexPolygonsData(worldFeatures);
+  // GeoIP country names differ from the world-atlas names; map them onto atlas names.
+  for (const n of [...globeCountries]) { const a = atlasName(n); if (a) globeCountries.add(a); }
+  for (const n of [...globeIntelCountries]) { const a = atlasName(n); if (a) globeIntelCountries.add(a); }
+  globe.polygonsData(worldFeatures);
   globe.pointsData(dests);
   const home = S.home && S.home.lat != null ? S.home : null;
   const arcsOn = $('#globe-arcs').checked && home;
@@ -760,6 +780,14 @@ async function loadSettings() {
   $('#config-dump').textContent = JSON.stringify(cfg, null, 2);
   $('#hosts-issues').innerHTML = (intel.hosts_issues || []).map((h) => `<li>⚠ ${esc(h)}</li>`).join('') || '<li>No suspicious entries in the hosts file.</li>';
 }
+$('#notify-toggle').checked = localStorage.getItem('nm-notify') === '1';
+$('#notify-toggle').addEventListener('change', async (e) => {
+  if (e.target.checked) {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { e.target.checked = false; $('#notify-note').textContent = 'The browser blocked notifications. Allow them for 127.0.0.1 in the browser site settings.'; return; }
+    localStorage.setItem('nm-notify', '1'); $('#notify-note').textContent = 'Enabled.';
+  } else { localStorage.setItem('nm-notify', '0'); $('#notify-note').textContent = ''; }
+});
 $('#intel-refresh').addEventListener('click', async () => { $('#intel-refresh').textContent = 'Refreshing…'; try { await post('/api/intel/refresh'); } finally { $('#intel-refresh').textContent = 'Refresh now'; loadSettings(); } });
 $('#block-ip-btn').addEventListener('click', () => blockIp($('#block-ip-input').value.trim()));
 
@@ -846,8 +874,13 @@ $('#dr-trust').addEventListener('click', async () => {
 
 // ---------- refresh loop ----------
 let refreshing = false;
+// Tables do not redraw while the pointer is over them, so rows stay put while you read or click.
+let tableHover = false;
+document.addEventListener('pointerover', (e) => { tableHover = !!e.target.closest?.('.table-wrap, .alert-list'); });
+document.addEventListener('pointerleave', () => { tableHover = false; });
 async function refreshView(force) {
   if (refreshing && !force) return;
+  if (tableHover && !force && ['connections', 'processes', 'alerts', 'dns', 'inventory'].includes(S.view)) return;
   refreshing = true;
   try {
     const v = S.view;

@@ -167,6 +167,15 @@ impl Intel {
 
     /// Load feeds from disk, downloading any that are missing or older than the refresh interval.
     pub async fn refresh(&self, force: bool) {
+        self.refresh_opts(force, true).await
+    }
+
+    /// Parse whatever is on disk without touching the network (fast startup).
+    pub async fn load_local(&self) {
+        self.refresh_opts(false, false).await
+    }
+
+    async fn refresh_opts(&self, force: bool, download: bool) {
         std::fs::create_dir_all(&self.dir).ok();
         let client = reqwest::Client::builder()
             .user_agent("NetMonitor/0.1 (local threat feed sync)")
@@ -177,7 +186,7 @@ impl Intel {
 
         let mut update = UpdateStatus { app_version: APP_VERSION.into(), ..Default::default() };
         let mut manifest: Option<Manifest> = None;
-        if !self.cfg.manifest_url.trim().is_empty() {
+        if download && !self.cfg.manifest_url.trim().is_empty() {
             update.manifest_checked = Some(crate::util::now_ms());
             match client.get(&self.cfg.manifest_url).send().await {
                 Ok(r) if r.status().is_success() => match r.json::<Manifest>().await {
@@ -228,7 +237,7 @@ impl Intel {
                 Err(_) => true,
             };
             let mut error = None;
-            if stale || force {
+            if download && (stale || force) {
                 match client.get(&feed.url).send().await {
                     Ok(resp) if resp.status().is_success() => match resp.text().await {
                         Ok(body) => {
@@ -274,7 +283,7 @@ impl Intel {
         }
         update.update_required = !update.reasons.is_empty();
         new.update = update;
-        new.last_refresh = Some(crate::util::now_ms());
+        new.last_refresh = if download { Some(crate::util::now_ms()) } else { self.data.read().last_refresh };
         tracing::info!(
             "threat intel loaded: {} IPs, {} CIDRs, {} domains from {} feeds",
             new.ips.len(),

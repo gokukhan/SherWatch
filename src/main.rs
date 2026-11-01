@@ -69,6 +69,34 @@ fn relaunch_elevated() -> bool {
         .unwrap_or(false)
 }
 
+/// Bind the dashboard port. If another NetMonitor instance holds it (for example a test run or an
+/// un-elevated copy), ask it to shut down and take the port: the latest launch wins.
+async fn bind_taking_over(addr: &str) -> anyhow::Result<tokio::net::TcpListener> {
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => return Ok(l),
+        Err(e) if e.kind() != std::io::ErrorKind::AddrInUse => return Err(e.into()),
+        Err(_) => {}
+    }
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build()?;
+    let probe = client.get(format!("http://{addr}/api/overview")).send().await;
+    let is_netmon = match probe {
+        Ok(r) => r.text().await.map(|t| t.contains("\"app_version\"")).unwrap_or(false),
+        Err(_) => false,
+    };
+    if !is_netmon {
+        anyhow::bail!("port {addr} is in use by another program; change [server] port in config.toml");
+    }
+    tracing::info!("another NetMonitor instance is on {addr}; asking it to stop");
+    let _ = client.post(format!("http://{addr}/api/shutdown")).send().await;
+    for _ in 0..30 {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
+            return Ok(l);
+        }
+    }
+    anyhow::bail!("could not take over port {addr}")
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -94,13 +122,11 @@ async fn main() -> anyhow::Result<()> {
 
     let db = db::Db::open(root.join("data").join("netmon.db"))?;
 
+    // Fast start: open what is on disk now; downloads happen in the background after the server is up.
     let geo_path = root.join(&cfg.geo.mmdb);
-    if let Err(e) = geo::ensure_database(&geo_path, &cfg.geo.download_url).await {
-        tracing::warn!("{e}");
-    }
     let geo = geo::Geo::open(&geo_path);
     let intel = intel::Intel::new(cfg.intel.clone(), root.join("data").join("feeds"));
-    intel.refresh(false).await;
+    intel.load_local().await;
 
     let (proc_tx, proc_rx) = std::sync::mpsc::channel();
     let (sig_tx, sig_rx) = std::sync::mpsc::channel();
@@ -147,6 +173,32 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Background downloads: GeoIP database (first run) and threat-feed refresh.
+    {
+        let s = state.clone();
+        let geo_path = geo_path.clone();
+        let url = cfg.geo.download_url.clone();
+        tokio::spawn(async move {
+            if !geo_path.exists() {
+                match geo::ensure_database(&geo_path, &url).await {
+                    Ok(()) => s.geo.load(&geo_path),
+                    Err(e) => tracing::warn!("{e}"),
+                }
+            }
+            s.intel.refresh(false).await;
+        });
+    }
+    // Ctrl+C: stop the ETW session cleanly, then exit.
+    {
+        tokio::spawn(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                tracing::info!("shutting down");
+                collectors::etw::stop();
+                std::process::exit(0);
+            }
+        });
+    }
+
     // One-second ticker: rolls per-second counters and pushes live updates.
     {
         let s = state.clone();
@@ -185,7 +237,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let addr = format!("{}:{}", cfg.server.bind, cfg.server.port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let listener = bind_taking_over(&addr).await?;
     let url = format!("http://{addr}/");
     tracing::info!("dashboard at {url}");
     if cfg.server.open_browser && !args.iter().any(|a| a == "--no-browser") {

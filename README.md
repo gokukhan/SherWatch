@@ -103,6 +103,10 @@ tools/               rustup installer and npm packages used to vendor the fronte
 ## Privacy
 
 - Traffic metadata, alerts and history are stored only in `data/netmon.db` on this machine.
+- The local API answers only the dashboard: requests from other origins or with a foreign
+  Host header are rejected.
+- The assistant's default free web model receives the facts about the item you ask about.
+  Choose a local Ollama model in its dropdown to keep everything on the PC.
 - Threat feeds and the GeoIP database are downloaded to disk and queried offline.
 - The home location is derived once from your public IP via api.ipify.org (a plain request
   with no payload). Set `home_lat` and `home_lon` in `config.toml` or

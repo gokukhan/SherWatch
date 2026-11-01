@@ -59,9 +59,45 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/ai/status", get(ai_status))
         .route("/api/ai/ask", post(ai_ask))
         .route("/api/export/{what}", get(export))
+        .route("/api/shutdown", post(shutdown))
         .route("/ws", get(ws_handler))
         .fallback(static_file)
+        .layer(axum::middleware::from_fn_with_state(state.clone(), guard_local))
         .with_state(state)
+}
+
+/// Only the dashboard itself may call the API: the Host header must be the local bind address and,
+/// when a browser sends an Origin, it must be this server. This blocks DNS-rebinding and
+/// cross-site requests from other pages open in the browser.
+async fn guard_local(State(s): S, req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let bind = s.cfg.server.bind.as_str();
+    let host_ok = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .map(|h| {
+            let h = h.trim_start_matches('[');
+            let host = h.rsplit_once(':').map(|(a, _)| a).unwrap_or(h).trim_end_matches(']');
+            host == "127.0.0.1" || host == "localhost" || host == "::1" || host == bind
+        })
+        .unwrap_or(false);
+    let origin_ok = match req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
+        None => true,
+        Some(o) => o.starts_with("http://127.0.0.1") || o.starts_with("http://localhost") || o.starts_with("http://[::1]") || o.starts_with(&format!("http://{bind}")),
+    };
+    if !host_ok || !origin_ok {
+        return (StatusCode::FORBIDDEN, "NetMonitor only answers the local dashboard").into_response();
+    }
+    next.run(req).await
+}
+
+async fn shutdown() -> Json<serde_json::Value> {
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        crate::collectors::etw::stop();
+        std::process::exit(0);
+    });
+    Json(json!({"ok": true}))
 }
 
 async fn index() -> Response {
