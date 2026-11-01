@@ -16,5 +16,8 @@
     "globe.gl": "^2.44.0",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
   }
 }

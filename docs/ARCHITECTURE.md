@@ -23,7 +23,9 @@ collectors, shared state, analysis, and the HTTP/WebSocket server.
 
 | File | Responsibility |
 |---|---|
-| `src/main.rs` | Startup: elevation, config, database, GeoIP download, feed refresh, spawning every worker, the 1 Hz ticker, the scheduled feed refresh, the HTTP server. |
+| `src/lib.rs` | Startup shared by both front ends: `start()` loads config, opens the database, kicks off the GeoIP download and feed refresh, spawns every worker, the 1 Hz ticker and the scheduled feed refresh, and binds the port (taking it over from an older instance); `serve()` runs the HTTP server; `shutdown()` stops the kernel trace. Also elevation, logging and `data_root()`. |
+| `src/main.rs` | Browser version: console logging, Ctrl+C, opens the dashboard in the default browser. |
+| `desktop/src/main.rs` | Desktop version (Tauri): the same `start()`/`serve()`, shown in a native window that loads the local server URL; tray icon, close-to-tray, single instance. No Tauri commands are exposed to the page. |
 | `src/config.rs` | `config.toml` schema with defaults. |
 | `src/model.rs` | Data types: `Connection`, `ProcessInfo`, `Alert`, `DnsEvent`, `Severity`, `FlowKey`... |
 | `src/state.rs` | `AppState`, the hub. Upserts from collectors, enrichment (GeoIP, intel, hostname), per-second accounting, alert creation with cooldown, overview aggregation, expiry. |

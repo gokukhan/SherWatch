@@ -262,10 +262,12 @@ fn ps_json(state: &AppState, script: &str) -> Option<serde_json::Value> {
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("inventory-query.ps1");
     std::fs::write(&path, script).ok()?;
-    let out = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", &path.display().to_string()])
-        .stdin(std::process::Stdio::null())
-        .output()
+    let out = crate::util::quiet(
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", &path.display().to_string()])
+            .stdin(std::process::Stdio::null()),
+    )
+    .output()
         .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     let text = text.trim_start_matches('\u{feff}');

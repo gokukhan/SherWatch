@@ -1,5 +1,13 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+/// Run an external tool (PowerShell, netsh, logman, taskkill) without flashing a console window.
+/// Matters for the windowed desktop build, harmless for the console one.
+pub fn quiet(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW)
+}
+
 pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }

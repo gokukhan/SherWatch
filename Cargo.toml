@@ -32,6 +32,9 @@ dns-lookup = "2"
 futures = "0.3"
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Shell"] }
 
+[workspace]
+members = ["desktop"]
+
 [profile.release]
 opt-level = 3
 lto = "thin"

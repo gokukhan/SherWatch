@@ -35,11 +35,66 @@ For the full feature set run the binary from an elevated terminal or through `ru
 The `RUST_LOG` environment variable controls verbosity, for example
 `RUST_LOG=netmon=debug`. `run.cmd` writes to `data\logs\netmon.log`.
 
+## Two front ends, one library
+
+The crate is a library (`src/lib.rs`: collectors, analysis, intel, database, server) with
+two thin binaries that cannot drift apart because neither contains any monitoring logic:
+
+| Binary | Where | What it adds |
+|---|---|---|
+| `netmon.exe` (browser version) | `src/main.rs` | console logging, Ctrl+C handling, opens the dashboard in the default browser |
+| `NetMonitor.exe` (desktop version) | `desktop/` | a Tauri window showing the same dashboard, a tray icon, close-to-tray, single instance, an NSIS installer |
+
+The desktop window loads `http://127.0.0.1:<port>/` from the embedded server, exactly like a
+browser tab would, so `web/` is shared unchanged and the dashboard's Host/Origin guard
+applies to it too. The page has no access to Tauri commands (`desktop/capabilities/default.json`
+grants only `core:default`), which keeps the blast radius of any rendering bug to the HTTP
+API.
+
+## Desktop build (Tauri)
+
+Prerequisites on top of the Rust toolchain: Node.js (for the Tauri CLI, installed into
+`tools/npm`) and the Microsoft Edge WebView2 runtime, which Windows 11 and updated Windows 10
+machines already have; the installer downloads it when missing.
+
+```
+cd tools\npm && npm install            (once; installs @tauri-apps/cli)
+npx --prefix tools/npm tauri build --config desktop/tauri.conf.json
+```
+
+Or without the CLI, for a plain executable with no installer:
+
+```
+cargo build --release -p netmon-desktop
+```
+
+Outputs:
+
+- `target\release\netmon-desktop.exe`: the desktop app itself.
+- `target\release\bundle\nsis\NetMonitor_<version>_x64-setup.exe`: the installer (only
+  from `tauri build`). The first `tauri build` downloads NSIS into the CLI's cache.
+
+The installer is unsigned until a code-signing certificate is configured, so SmartScreen
+shows "unrecognised app" the first time; see `bundle.windows.certificateThumbprint` in the
+Tauri documentation when a certificate is available.
+
+The app icon is drawn by `tools/make_icon.py` (Pillow) and the icon set under
+`desktop/icons` is generated with `npx --prefix tools/npm tauri icon desktop/app-icon.png -o desktop/icons`.
+
+Development run of the desktop version (debug build, reads `web/` from disk):
+
+```
+cargo run -p netmon-desktop -- --no-elevate
+```
+
 ## Where the app looks for its files
 
-`project_root()` in `src/main.rs` walks up from the executable's folder looking for
-`config.toml` and falls back to the current directory. Running from `target\release` or
-`target\debug` therefore finds the project's `config.toml` and `data/`.
+`data_root()` in `src/lib.rs` walks up from the executable's folder looking for
+`config.toml`. Running from `target\release` or `target\debug` therefore finds the
+project's `config.toml` and `data/`. An installed copy (under Program Files, no
+`config.toml` next to it) uses `%LOCALAPPDATA%\NetMonitor\` instead and writes the default
+`config.toml` there on first start; the database, feeds, GeoIP file and logs
+(`data\logs\netmon-desktop.log`) live under that folder.
 
 ## Frontend libraries
 

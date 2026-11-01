@@ -5,7 +5,7 @@ use crate::state::AppState;
 use std::process::Command;
 
 fn run(cmd: &str, args: &[&str]) -> Result<String, String> {
-    let out = Command::new(cmd).args(args).stdin(std::process::Stdio::null()).output().map_err(|e| e.to_string())?;
+    let out = crate::util::quiet(Command::new(cmd).args(args).stdin(std::process::Stdio::null())).output().map_err(|e| e.to_string())?;
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
     if out.status.success() {

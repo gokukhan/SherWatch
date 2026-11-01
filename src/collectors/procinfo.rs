@@ -156,10 +156,12 @@ fn verify_signatures(paths: &[String]) -> std::collections::HashMap<String, (Sig
     let script = format!(
         "$ErrorActionPreference='SilentlyContinue'; $p=@({list}); Get-AuthenticodeSignature -LiteralPath $p | ForEach-Object {{ [pscustomobject]@{{ Path=$_.Path; Status=$_.Status.ToString(); Signer=$(if($_.SignerCertificate){{$_.SignerCertificate.Subject}}else{{''}}) }} }} | ConvertTo-Json -Compress"
     );
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
-        .stdin(std::process::Stdio::null())
-        .output();
+    let output = crate::util::quiet(
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .stdin(std::process::Stdio::null()),
+    )
+    .output();
     let Ok(output) = output else { return out };
     let text = String::from_utf8_lossy(&output.stdout);
     let text = text.trim();

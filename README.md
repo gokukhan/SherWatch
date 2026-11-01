@@ -68,6 +68,15 @@ Flags:
 | `--no-elevate` | Do not request administrator rights. Reduced visibility. |
 | `--no-browser` | Do not open the dashboard in a browser. |
 
+### Desktop app
+
+The same monitor is also available as a Windows desktop app (Tauri): a native window with
+the dashboard, a tray icon, and an installer. Closing the window hides it to the tray while
+monitoring continues; **Quit** in the tray menu stops it. Build it with
+`npx --prefix tools/npm tauri build --config desktop/tauri.conf.json` (see docs/BUILDING.md);
+the installer lands in `target\release\bundle\nsis\`. Both versions share one code base and
+one dashboard, so features arrive in both at the same time.
+
 ## Configuration
 
 All settings live in [config.toml](config.toml). Edit and restart. The main knobs are the
@@ -80,7 +89,8 @@ The file is commented.
 ```
 config.toml          settings
 run.cmd              start the app (release build)
-src/                 Rust source (see docs/ARCHITECTURE.md)
+src/                 Rust library + browser-version binary (see docs/ARCHITECTURE.md)
+desktop/             Tauri desktop version (window, tray, installer) over the same library
 web/                 dashboard (plain HTML, CSS, JS; embedded in the binary at release build)
 web/vendor/          chart.js, globe.gl, d3, topojson, world-atlas (vendored, offline)
 data/feeds/          downloaded threat feeds and feeds.json (runtime-added feeds)

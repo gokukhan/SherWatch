@@ -139,11 +139,13 @@ fn dns_callback(record: &EventRecord, locator: &SchemaLocator) {
 pub fn start(state: Arc<AppState>) {
     let _ = STATE.set(state.clone());
     // A trace with our name may linger from a crashed run; stop it first.
-    let _ = std::process::Command::new("logman")
-        .args(["stop", TRACE_NAME, "-ets"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    let _ = crate::util::quiet(
+        std::process::Command::new("logman")
+            .args(["stop", TRACE_NAME, "-ets"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null()),
+    )
+    .status();
 
     let net = Provider::by_guid(KERNEL_NETWORK).add_callback(net_callback).build();
     let dns = Provider::by_guid(DNS_CLIENT)
@@ -168,7 +170,7 @@ pub fn start(state: Arc<AppState>) {
 
 #[allow(dead_code)]
 pub fn stop() {
-    let _ = std::process::Command::new("logman").args(["stop", TRACE_NAME, "-ets"]).status();
+    let _ = crate::util::quiet(std::process::Command::new("logman").args(["stop", TRACE_NAME, "-ets"]).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())).status();
 }
 
 #[allow(dead_code)]
