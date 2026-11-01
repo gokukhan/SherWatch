@@ -39,6 +39,8 @@ at risk 90 or higher.
 | R23-masquerade | Critical | Process name masquerade | A process named like a core Windows binary (svchost, lsass, csrss, explorer, dwm, RuntimeBroker...) running from outside C:\Windows without a valid Microsoft signature (Defender's MsMpEng under ProgramData is signed and therefore exempt). | Malware names itself after system processes to hide in Task Manager. |
 | R24-exploited-software | High / Critical | Exploited software, likely unpatched | A network-active program or a Windows service matches a product in CISA's Known Exploited Vulnerabilities catalogue and its executable on disk is older than the likely fix date (the earlier of the catalogue date and the end of the year after the CVE's year). Product names must match the product, not just the vendor, and short names such as "Ray" or "Edge" also need the vendor to match. Critical when the entry is tied to ransomware campaigns and the program is online. | These are vulnerabilities attackers are using right now. An old binary means the fix is not installed. Update the program or stop it until updated. |
 | R25-os-patch | Medium / High | Windows updates stale | The newest installed hotfix is older than 45 days, or Windows vulnerabilities were added to the KEV catalogue after that date. High when both. | Unpatched Windows is the most common entry point. Run Windows Update. |
+| R27-file-upload | Critical | File leaving this PC | A program not listed in `approved_uploaders` (default: OneDrive only) sent more than `file_upload_bytes_per_minute` (5 MB) to public addresses within 60 s. Requires ETW byte counts (administrator). | Any transfer of a file-sized amount out of the machine by something you did not approve. Backup clients, video calls, game launchers and browser uploads will trip it until you add them to the approved list; that is the point: you decide who may upload. |
+| R28-file-sharing | Critical / Medium | Upload to a file-sharing service | A non-approved program uploaded at least `file_sharing_min_bytes` (256 KB) on one connection to a host in the file-sharing and paste list (WeTransfer, Mega, Dropbox, Box, MediaFire, GoFile, transfer.sh, Pastebin, Telegram API, Discord, S3...; extend with `file_sharing_domains`). Without administrator rights the size is unknown, so a connection to such a service raises Medium instead. Hosts are matched by the captured or reverse-resolved hostname, and by address: the service names are resolved forward at start and every six hours. | The common way files are moved out of a PC by a person or a stealer. Simply browsing one of these sites stays silent when byte counts are available. |
 | R26-known-cve | Medium / High | Published CVEs for this version | The optional online lookup found CVEs for the exact installed version with CVSS 9 or higher (High when one is actively exploited). Only after "Check CVEs online" or with `online_lookup = true`. | Version-exact confirmation that a known weakness applies to what is installed. |
 | SYS-update | Info | App update needed | The threat-feed manifest requires a newer app version, a feed uses an unsupported format, or a source returned 404/410/401/403. | Tells you to ask for a code update so new threat data keeps flowing. |
 
@@ -47,6 +49,9 @@ at risk 90 or higher.
 All thresholds are in `config.toml` under `[analysis]`. Typical adjustments:
 
 - Backup or sync clients: raise `exfil_bytes_per_minute` or acknowledge their R10 alerts.
+- Programs that legitimately upload (backup, cloud sync other than OneDrive, video calls,
+  game launchers, dev tools pushing to Git hosting): add their executable name to
+  `approved_uploaders`, otherwise R27 flags every transfer above 5 MB as critical.
 - Development machines with many unsigned tools: expect R04; the cooldown keeps it to one
   alert per executable per 10 minutes.
 - Update checkers that poll on a fixed timer trigger R09. Lower `beacon_max_cv` (stricter)
@@ -56,7 +61,9 @@ All thresholds are in `config.toml` under `[analysis]`. Typical adjustments:
 ## What the rules cannot see
 
 - Without administrator rights there are no byte counts, no DNS capture, no accept events.
-  R02, R08 (partly), R10, R11, R12, R20 and R22 stay silent.
+  R02, R08 (partly), R10, R11, R12, R20, R22 and R27 stay silent; R28 drops to Medium.
+- Files leaving by USB stick, Bluetooth, a network share, printing or the remote-desktop
+  clipboard are not network traffic and are not seen.
 - Encrypted traffic contents are never inspected; the rules work on metadata, timing, volume
   and reputation.
 - A signed binary from a reputable vendor that is itself malicious (supply chain) only shows

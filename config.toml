@@ -15,6 +15,14 @@ exfil_bytes_per_minute = 26214400     # 25 MB
 exfil_bytes_per_5min = 209715200      # 200 MB
 # Distinct public destinations per process within 60 seconds (scan / spray detection)
 many_destinations_threshold = 100
+# File-exfiltration rules (R27, R28). Programs listed here may upload freely; any other program that
+# sends more than file_upload_bytes_per_minute to public addresses raises a CRITICAL alert.
+# Add your backup client, video-call app or game launcher here when they trip it legitimately.
+approved_uploaders = ["onedrive.exe"]
+file_upload_bytes_per_minute = 5242880    # 5 MB
+# Uploads to a file-sharing or paste service (R28) are critical from this many bytes on one connection.
+# Browsing such a site stays silent; the built-in service list can be extended with file_sharing_domains = [...]
+file_sharing_min_bytes = 262144           # 256 KB
 # Beacon detection: minimum number of regular intervals and max coefficient of variation
 beacon_min_intervals = 6
 beacon_max_cv = 0.25

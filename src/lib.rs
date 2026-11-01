@@ -214,6 +214,26 @@ pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
         });
     }
 
+    // Resolve the file-sharing service names to addresses (R28) now and every six hours.
+    {
+        let s = state.clone();
+        tokio::task::spawn_blocking(move || loop {
+            let domains = s.cfg.analysis.file_sharing_domains.clone();
+            let mut n = 0;
+            for d in &domains {
+                for name in [d.clone(), format!("www.{d}")] {
+                    if let Ok(addrs) = dns_lookup::lookup_host(&name) {
+                        for ip in addrs {
+                            s.sharing_ips.insert(ip, d.clone());
+                            n += 1;
+                        }
+                    }
+                }
+            }
+            tracing::info!("file-sharing services resolved: {} addresses for {} domains", n, domains.len());
+            std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+        });
+    }
     // One-second ticker: rolls per-second counters and pushes live updates.
     {
         let s = state.clone();

@@ -48,6 +48,8 @@ fn rule_hint(rule: &str) -> &'static str {
         "R08" => "process does its own DNS instead of using the Windows resolver",
         "R09" => "connects to the same host at a very regular interval (beaconing)",
         "R10" => "large upload volume",
+        "R27" => "uploaded more than the file threshold while not on the approved-uploader list (possible file leaving the PC)",
+        "R28" => "uploaded to a file-sharing or paste service",
         "R11" => "DNS traffic pattern typical of tunnelling",
         "R12" => "random-looking (algorithm-generated) domain name",
         "R13" => "first time this executable used the network on this PC",

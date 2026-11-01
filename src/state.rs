@@ -86,6 +86,9 @@ pub struct AppState {
     pub beacons: DashMap<(u32, IpAddr), VecDeque<i64>>,
     pub dst_window: DashMap<u32, VecDeque<(i64, IpAddr)>>,
     pub inbound_accepts: DashMap<u32, (u64, i64)>,
+    /// Addresses of the configured file-sharing services, resolved forward in the background so R28 can
+    /// match connections even when no hostname was captured (no admin, no reverse name).
+    pub sharing_ips: DashMap<IpAddr, String>,
 
     pub ws_tx: broadcast::Sender<String>,
     pub etw_active: AtomicBool,
@@ -204,6 +207,7 @@ impl AppState {
             beacons: DashMap::new(),
             dst_window: DashMap::new(),
             inbound_accepts: DashMap::new(),
+            sharing_ips: DashMap::new(),
             ws_tx,
             etw_active: AtomicBool::new(false),
             etw_error: RwLock::new(None),

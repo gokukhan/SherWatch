@@ -74,6 +74,19 @@ pub struct AnalysisCfg {
     pub exfil_bytes_per_5min: u64,
     #[serde(default = "d_many")]
     pub many_destinations_threshold: usize,
+    /// Programs allowed to upload freely (executable names, case-insensitive). Any other program that
+    /// sends more than `file_upload_bytes_per_minute` to public addresses raises a critical
+    /// "file leaving this PC" alert (R27).
+    #[serde(default = "d_approved")]
+    pub approved_uploaders: Vec<String>,
+    #[serde(default = "d_file_upload")]
+    pub file_upload_bytes_per_minute: u64,
+    /// Upload to a file-sharing service (R28) is critical from this many bytes on one connection.
+    #[serde(default = "d_sharing_min")]
+    pub file_sharing_min_bytes: u64,
+    /// File-sharing and paste services; a hostname matches when it equals or ends with one of these.
+    #[serde(default = "d_sharing_domains")]
+    pub file_sharing_domains: Vec<String>,
     #[serde(default = "d_beacon_n")]
     pub beacon_min_intervals: usize,
     #[serde(default = "d_beacon_cv")]
@@ -94,6 +107,10 @@ impl Default for AnalysisCfg {
             exfil_bytes_per_minute: d_exfil_min(),
             exfil_bytes_per_5min: d_exfil_5(),
             many_destinations_threshold: d_many(),
+            approved_uploaders: d_approved(),
+            file_upload_bytes_per_minute: d_file_upload(),
+            file_sharing_min_bytes: d_sharing_min(),
+            file_sharing_domains: d_sharing_domains(),
             beacon_min_intervals: d_beacon_n(),
             beacon_max_cv: d_beacon_cv(),
             watch_countries: vec![],
@@ -169,6 +186,23 @@ fn d_cooldown() -> u64 { 10 }
 fn d_exfil_min() -> u64 { 25 * 1024 * 1024 }
 fn d_exfil_5() -> u64 { 200 * 1024 * 1024 }
 fn d_many() -> usize { 100 }
+fn d_approved() -> Vec<String> { vec!["onedrive.exe".into()] }
+fn d_file_upload() -> u64 { 5 * 1024 * 1024 }
+fn d_sharing_min() -> u64 { 256 * 1024 }
+fn d_sharing_domains() -> Vec<String> {
+    [
+        "wetransfer.com", "we.tl", "mega.nz", "mega.io", "mega.co.nz", "dropbox.com", "dropboxusercontent.com", "box.com",
+        "mediafire.com", "sendspace.com", "4shared.com", "zippyshare.com", "gofile.io", "file.io", "transfer.sh", "anonfiles.com",
+        "pixeldrain.com", "catbox.moe", "filebin.net", "ufile.io", "uploadfiles.io", "fromsmash.com", "swisstransfer.com",
+        "filetransfer.io", "wormhole.app", "send.vis.ee", "filemail.com", "sendgb.com", "tresorit.com", "pcloud.com", "icedrive.net",
+        "pastebin.com", "paste.ee", "hastebin.com", "ghostbin.com", "rentry.co", "privatebin.net", "api.telegram.org",
+        "discord.com", "discordapp.com", "api.anonfiles.com", "bayfiles.com", "krakenfiles.com", "ddownload.com", "uptobox.com",
+        "filen.io", "proton.me", "drive.proton.me", "backblaze.com", "backblazeb2.com", "s3.amazonaws.com",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
 fn d_beacon_n() -> usize { 6 }
 fn d_beacon_cv() -> f64 { 0.25 }
 fn d_refresh() -> u64 { 6 }

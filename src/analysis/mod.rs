@@ -118,11 +118,30 @@ fn run_rules(state: &AppState) {
     // ---- per-connection rules ----
     let conns: Vec<_> = state.conns.iter().map(|c| c.clone()).collect();
     let mut per_proc_public: HashMap<u32, usize> = HashMap::new();
+    // pid -> (file-sharing host, bytes uploaded on the largest connection to it), for R28.
+    let mut sharing: HashMap<u32, Vec<(String, u64)>> = HashMap::new();
+    let is_sharing_host = |h: &str| {
+        let h = h.trim_end_matches('.').to_ascii_lowercase();
+        cfg.file_sharing_domains.iter().any(|d| h == *d || h.ends_with(&format!(".{d}")))
+    };
     for c in &conns {
         if c.scope != "public" {
             continue;
         }
         *per_proc_public.entry(c.pid).or_default() += 1;
+        let sharing_host = c
+            .hostname
+            .as_deref()
+            .filter(|h| is_sharing_host(h))
+            .map(str::to_string)
+            .or_else(|| state.sharing_ips.get(&c.remote_addr).map(|h| h.clone()));
+        if let Some(h) = sharing_host {
+            let entry = sharing.entry(c.pid).or_default();
+            match entry.iter_mut().find(|(host, _)| *host == h) {
+                Some(e) => e.1 = e.1.max(c.bytes_out),
+                None => entry.push((h, c.bytes_out)),
+            }
+        }
         let Some(p) = procs.get(&c.pid) else { continue };
         let remote = format!("{}:{}", c.remote_addr, c.remote_port);
         let host = c.hostname.clone().unwrap_or_default();
@@ -299,8 +318,58 @@ fn run_rules(state: &AppState) {
         let label = if p.name.is_empty() { format!("pid {}", p.pid) } else { p.name.clone() };
         let public = per_proc_public.get(&p.pid).copied().unwrap_or(0);
 
+        // R27 file leaving this PC: any upload above the (low) file threshold by a program that is not an
+        // approved uploader. Critical by design: the user wants to know about every transfer out.
+        let approved = cfg.approved_uploaders.iter().any(|a| a.eq_ignore_ascii_case(&p.lname));
+        let mut r27 = false;
+        if public > 0 && !approved && p.out_60 >= cfg.file_upload_bytes_per_minute {
+            r27 = true;
+            state.push_alert(
+                Severity::Critical,
+                "R27-file-upload",
+                format!("{label} is sending data out of this PC: {} in a minute", human(p.out_60)),
+                format!(
+                    "{} uploaded {} to public addresses in 60 s (received {}) and is not an approved uploader. If you did not start this transfer, block it now; if it is legitimate (backup, video call, cloud sync), add \"{}\" to approved_uploaders in config.toml.",
+                    p.exe,
+                    human(p.out_60),
+                    human(p.in_60),
+                    p.lname
+                ),
+                p.pid,
+                "",
+            );
+        }
+        // R28 upload to a file-sharing or paste service.
+        if !approved {
+            if let Some(hits) = sharing.get(&p.pid) {
+                for (host, bytes) in hits {
+                    if etw && *bytes >= cfg.file_sharing_min_bytes {
+                        state.push_alert(
+                            Severity::Critical,
+                            "R28-file-sharing",
+                            format!("{label} uploaded {} to file-sharing service {host}", human(*bytes)),
+                            format!("{} sent {} to {host}, a file-sharing or paste service. Files sent this way leave your control immediately. Block the program or add it to approved_uploaders if this was you.", p.exe, human(*bytes)),
+                            p.pid,
+                            host,
+                        );
+                    } else if !etw {
+                        state.push_alert(
+                            Severity::Medium,
+                            "R28-file-sharing-contact",
+                            format!("{label} connected to file-sharing service {host}"),
+                            format!("{} is talking to {host}. Without administrator rights the upload size cannot be measured, so this may be a page view or a transfer. Run NetMonitor as administrator to tell them apart.", p.exe),
+                            p.pid,
+                            host,
+                        );
+                    }
+                }
+            }
+        }
+
         // R10 exfiltration volume
-        if public > 0 && p.out_60 >= cfg.exfil_bytes_per_minute {
+        if r27 {
+            // Already raised as critical above.
+        } else if public > 0 && p.out_60 >= cfg.exfil_bytes_per_minute {
             let sev = if p.out_60 > p.in_60 * 5 { Severity::High } else { Severity::Medium };
             state.push_alert(
                 sev,
