@@ -763,7 +763,7 @@ function renderDns() {
   $('#dns-table tbody').innerHTML = rows.slice(0, 400).map((d) => `<tr><td class="muted">${timeStr(d.ts)}</td><td>${esc(d.process || 'pid ' + d.pid)}</td><td class="mono" title="${esc(d.query)}">${d.flags?.includes('intel') ? '<span class="tag intel">intel</span>' : ''}${esc(d.query)}</td><td>${QTYPE[d.qtype] || d.qtype}</td><td class="${d.status ? 'muted' : ''}">${QSTATUS[d.status] || d.status}</td><td class="mono muted" title="${esc(d.results.join(', '))}">${esc(d.results.slice(0, 3).join(', '))}${d.results.length > 3 ? ' …' : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No DNS activity captured. Packet capture must be active.</td></tr>';
   const counts = new Map();
   for (const d of S.dns) { const base = d.query.split('.').slice(-2).join('.'); counts.set(base, (counts.get(base) || 0) + 1); }
-  const top = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 12);
+  const top = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 14);
   charts.dns.data.labels = top.map(([k]) => k); charts.dns.data.datasets[0].data = top.map(([, v]) => v); charts.dns.update('none');
 }
 $('#d-filter').addEventListener('input', renderDns);

@@ -227,8 +227,11 @@ li.acked { opacity: 0.55; }
 .ticker .t-intel { color: var(--critical); font-weight: 600; }
 
 /* ---------- dns / settings grids ---------- */
-.grid-dns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 12px; }
+/* chart on top at full width, query table below it: the table has many columns and needs the whole width */
+.grid-dns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .grid-dns > .panel { margin-top: 0; min-width: 0; }
+.grid-dns .chart-box { height: 300px; }
+.grid-dns .table-wrap.tall { max-height: calc(100vh - 520px); min-height: 320px; }
 .grid-inv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
 .grid-inv > .panel { margin-top: 0; min-width: 0; }
 .tag.kev { border-color: var(--critical); color: #fff; background: rgba(208,59,59,0.35); }
