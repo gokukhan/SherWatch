@@ -376,6 +376,16 @@ let globe = null, globeHost = null, worldFeatures = null, globeCountries = new S
 let countryLabels = [], globeHoverPaused = false;
 const ATLAS_ALIAS = { 'united states': 'United States of America', 'russian federation': 'Russia', 'korea, republic of': 'South Korea', 'korea, democratic people\'s republic of': 'North Korea', 'czech republic': 'Czechia', 'viet nam': 'Vietnam', 'türkiye': 'Turkey', 'turkiye': 'Turkey', 'iran, islamic republic of': 'Iran', 'taiwan, province of china': 'Taiwan', 'bosnia and herzegovina': 'Bosnia and Herz.', 'dominican republic': 'Dominican Rep.', 'syrian arab republic': 'Syria', 'lao people\'s democratic republic': 'Laos', 'moldova, republic of': 'Moldova', 'bolivia, plurinational state of': 'Bolivia', 'venezuela, bolivarian republic of': 'Venezuela', 'tanzania, united republic of': 'Tanzania', 'congo, the democratic republic of the': 'Dem. Rep. Congo', 'congo': 'Congo', 'central african republic': 'Central African Rep.', 'south sudan': 'S. Sudan', 'palestine, state of': 'Palestine', 'brunei darussalam': 'Brunei', 'equatorial guinea': 'Eq. Guinea', 'solomon islands': 'Solomon Is.', 'eswatini': 'eSwatini', 'western sahara': 'W. Sahara', 'falkland islands (malvinas)': 'Falkland Is.', 'hong kong': 'China', 'macao': 'China', 'singapore': 'Malaysia', 'north macedonia': 'North Macedonia', 'côte d\'ivoire': "Côte d'Ivoire", 'cote d\'ivoire': "Côte d'Ivoire", 'united kingdom': 'United Kingdom', 'timor-leste': 'Timor-Leste', 'bahamas': 'Bahamas', 'gambia': 'Gambia', 'netherlands': 'Netherlands', 'somalia': 'Somalia' };
 const atlasNames = new Set();
+// Each country gets a fixed muted hue from a small harmonious set, so neighbours read as distinct.
+const MAP_HUES = [214, 262, 176, 42, 328, 118, 290, 196, 20, 150];
+function countryHue(name) { let h = 7; for (const c of name || '') h = (h * 31 + c.charCodeAt(0)) >>> 0; return MAP_HUES[h % MAP_HUES.length]; }
+function countryColor(f) {
+  const n = f.properties?.name;
+  if (globeIntelCountries.has(n)) return 'rgba(208,59,59,0.9)';
+  const hue = countryHue(n);
+  return globeCountries.has(n) ? `hsla(${hue}, 70%, 52%, 0.9)` : `hsla(${hue}, 28%, 30%, 0.85)`;
+}
+let lastHighlightKey = '';
 function atlasName(geoName) {
   if (!geoName) return null;
   if (atlasNames.has(geoName)) return geoName;
@@ -386,6 +396,7 @@ function atlasName(geoName) {
   return null;
 }
 const geoObjects = new Map(); // ip -> stable object so globe.gl can diff instead of re-creating
+const cityLabelObjects = new Map(); // city key -> stable label object
 async function initGlobe() {
   try {
     const world = await (await fetch('vendor/countries-110m.json')).json();
@@ -401,8 +412,8 @@ async function initGlobe() {
     .showAtmosphere(true).atmosphereColor('#3987e5').atmosphereAltitude(0.16)
     // Solid country polygons (the hex tiler drops countries that cross the antimeridian).
     .polygonsData(worldFeatures).polygonAltitude(0.006)
-    .polygonCapColor((f) => { const n = f.properties?.name; return globeIntelCountries.has(n) ? 'rgba(208,59,59,0.75)' : globeCountries.has(n) ? 'rgba(57,135,229,0.55)' : 'rgba(78,84,96,0.55)'; })
-    .polygonSideColor(() => 'rgba(0,0,0,0)').polygonStrokeColor(() => 'rgba(195,194,183,0.35)')
+    .polygonCapColor(countryColor)
+    .polygonSideColor(() => 'rgba(0,0,0,0)').polygonStrokeColor(() => 'rgba(240,239,236,0.28)')
     .polygonLabel((f) => `<div class="globe-tip">${esc(f.properties?.name || '')}</div>`)
     .polygonsTransitionDuration(0)
     .arcsData([]).arcStartLat('sLat').arcStartLng('sLon').arcEndLat('lat').arcEndLng('lon')
@@ -469,27 +480,50 @@ function updateGlobe() {
   // GeoIP country names differ from the world-atlas names; map them onto atlas names.
   for (const n of [...globeCountries]) { const a = atlasName(n); if (a) globeCountries.add(a); }
   for (const n of [...globeIntelCountries]) { const a = atlasName(n); if (a) globeIntelCountries.add(a); }
-  globe.polygonsData(worldFeatures);
-  globe.pointsData(dests);
+  // Recolour countries only when the highlighted set changes; re-submitting polygons every refresh stutters.
+  const hk = [...globeCountries].sort().join('|') + '#' + [...globeIntelCountries].sort().join('|');
+  if (hk !== lastHighlightKey) { lastHighlightKey = hk; globe.polygonCapColor(countryColor); }
+  // Points: only re-submit when the set, risk band or traffic magnitude changed.
+  const pointKey = dests.map((d) => `${d.ip}:${d.risk}:${Math.round(Math.log10(1 + d.bytes_in + d.bytes_out) * 2)}`).join('|');
+  if (pointKey !== globe.__pointKey) { globe.__pointKey = pointKey; globe.pointsData(dests); }
   const home = S.home && S.home.lat != null ? S.home : null;
   const arcsOn = $('#globe-arcs').checked && home;
   const now = Date.now();
   const active = dests.filter((d) => now - d.last_seen < 30000).sort((a, b) => (b.bytes_in + b.bytes_out) - (a.bytes_in + a.bytes_out)).slice(0, 150);
-  globe.arcsData(arcsOn ? active.map((d) => ({ ...d, sLat: home.lat, sLon: home.lon })) : []);
-  globe.ringsData(home ? [home] : []);
+  // Arcs reuse the destination objects (with the home end attached) so unchanged arcs keep their animation state.
+  if (home) for (const d of active) { d.sLat = home.lat; d.sLon = home.lon; }
+  globe.arcsData(arcsOn ? active : []);
+  if (!globe.__home || globe.__home.lat !== home?.lat) { globe.__home = home ? { lat: home.lat, lon: home.lon } : null; globe.ringsData(globe.__home ? [globe.__home] : []); }
   const labelsOn = $('#globe-labels').checked;
   const activeCountries = new Set([...globeCountries, ...globeIntelCountries]);
   const countries = countryLabels.filter((c) => c.area > 0.002 || activeCountries.has(c.name));
-  // One label per city instead of one per IP, so clusters stay readable.
-  const cities = new Map();
+  // globe.gl reads label text once per object; bump a version field so changed city labels redraw.
+  countries.forEach((c) => { c.kind = 'country'; });
+  // One label per city instead of one per IP, so clusters stay readable. Label objects are kept
+  // between refreshes (keyed by city) so unchanged labels are not rebuilt.
+  const fresh = new Map();
   for (const d of active) {
     const key = `${d.city || ''}|${d.country || ''}|${d.lat.toFixed(1)}|${d.lon.toFixed(1)}`;
-    const c = cities.get(key) || { kind: 'city', lat: d.lat, lon: d.lon, city: d.city, country: d.country, hosts: [], risk: 0, bytes: 0 };
+    const c = fresh.get(key) || { key, lat: d.lat, lon: d.lon, city: d.city, country: d.country, hosts: [], risk: 0, bytes: 0 };
     c.hosts.push(d.hostname || shortIp(d.ip)); c.risk = Math.max(c.risk, d.risk); c.bytes += d.bytes_in + d.bytes_out;
-    cities.set(key, c);
+    fresh.set(key, c);
   }
-  const cityLabels = [...cities.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 30).map((c) => ({ ...c, text: `${c.city || c.country || c.hosts[0]}${c.hosts.length > 1 ? ` · ${c.hosts.length}` : ''}` }));
-  globe.labelsData(labelsOn ? [...countries, ...cityLabels] : countries);
+  const keep = new Set();
+  const cityLabels = [...fresh.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 30).map((c) => {
+    const text = `${c.city || c.country || c.hosts[0]}${c.hosts.length > 1 ? ` · ${c.hosts.length}` : ''}`;
+    let o = cityLabelObjects.get(c.key);
+    if (!o || o.text !== text || o.risk !== c.risk) {
+      // A changed label gets a new object so the globe rebuilds just that one sprite.
+      o = { kind: 'city', key: c.key, lat: c.lat, lon: c.lon, text, hosts: c.hosts, risk: c.risk };
+      cityLabelObjects.set(c.key, o);
+    } else o.hosts = c.hosts;
+    keep.add(c.key);
+    return o;
+  });
+  for (const k of [...cityLabelObjects.keys()]) if (!keep.has(k)) cityLabelObjects.delete(k);
+  const labelSet = labelsOn ? [...countries, ...cityLabels] : countries;
+  const labelKey = labelSet.map((l) => (l.kind === 'city' ? l.key + ':' + l.text : l.name)).join('|');
+  if (labelKey !== globe.__labelKey) { globe.__labelKey = labelKey; globe.labelsData(labelSet); }
   $('#globe-sub').textContent = `${dests.length} destinations · ${active.length} active`;
   $('#globe-home').textContent = home ? `home: ${home.label}` : 'home location unknown';
 }
