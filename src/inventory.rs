@@ -570,7 +570,7 @@ pub async fn online_lookup(state: Arc<AppState>) {
         inv.online_running = true;
         inv.online_progress = "starting".into();
     }
-    let client = reqwest::Client::builder().user_agent("NetMonitor/0.1").timeout(std::time::Duration::from_secs(20)).build().unwrap();
+    let client = reqwest::Client::builder().user_agent("SherWatch/0.1").timeout(std::time::Duration::from_secs(20)).build().unwrap();
     let items: Vec<InventoryItem> = {
         let inv = state.inventory.read();
         let mut v: Vec<InventoryItem> = inv.items.values().filter(|i| !i.version.is_empty() && (i.network_active || i.kind != "program" || true)).cloned().collect();

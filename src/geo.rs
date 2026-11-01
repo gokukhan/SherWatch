@@ -64,7 +64,7 @@ pub async fn ensure_database(path: &Path, url_template: &str) -> anyhow::Result<
                 .replace("{MM}", &d.format("%m").to_string()),
         );
     }
-    let client = reqwest::Client::builder().user_agent("NetMonitor/0.1").build()?;
+    let client = reqwest::Client::builder().user_agent("SherWatch/0.1").build()?;
     for url in candidates {
         tracing::info!("downloading GeoIP database from {url}");
         let resp = match client.get(&url).send().await {

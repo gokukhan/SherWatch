@@ -1,4 +1,4 @@
-"""Draw the NetMonitor app icon (ring + dot on a dark rounded square) as a 1024 px PNG.
+"""Draw the SherWatch app icon (ring + dot on a dark rounded square) as a 1024 px PNG.
 
 Usage: python tools/make_icon.py desktop/app-icon.png
 Then:  npx --prefix tools/npm tauri icon desktop/app-icon.png -o desktop/icons

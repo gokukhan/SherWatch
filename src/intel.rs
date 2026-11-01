@@ -178,7 +178,7 @@ impl Intel {
     async fn refresh_opts(&self, force: bool, download: bool) {
         std::fs::create_dir_all(&self.dir).ok();
         let client = reqwest::Client::builder()
-            .user_agent("NetMonitor/0.1 (local threat feed sync)")
+            .user_agent("SherWatch/0.1 (local threat feed sync)")
             .timeout(std::time::Duration::from_secs(90))
             .build()
             .unwrap();

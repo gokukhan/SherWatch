@@ -359,7 +359,7 @@ fn run_rules(state: &AppState) {
                             Severity::Medium,
                             "R28-file-sharing-contact",
                             format!("{label} connected to file-sharing service {host}"),
-                            format!("{} is talking to {host}. Without administrator rights the upload size cannot be measured, so this may be a page view or a transfer. Run NetMonitor as administrator to tell them apart.", p.exe),
+                            format!("{} is talking to {host}. Without administrator rights the upload size cannot be measured, so this may be a page view or a transfer. Run SherWatch as administrator to tell them apart.", p.exe),
                             p.pid,
                             host,
                         );

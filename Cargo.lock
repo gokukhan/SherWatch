@@ -2554,51 +2554,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "netmon"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "dashmap",
- "dns-lookup",
- "ferrisetw",
- "flate2",
- "futures",
- "hex",
- "ipnet",
- "maxminddb",
- "mime_guess",
- "netstat2",
- "parking_lot",
- "reqwest 0.12.28",
- "rusqlite",
- "rust-embed",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sysinfo",
- "tokio",
- "toml 0.8.23",
- "tracing",
- "tracing-subscriber",
- "windows 0.61.3",
-]
-
-[[package]]
-name = "netmon-desktop"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "netmon",
- "tauri",
- "tauri-build",
- "tauri-plugin-single-instance",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "netstat2"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4080,6 +4035,51 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "sherwatch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "dashmap",
+ "dns-lookup",
+ "ferrisetw",
+ "flate2",
+ "futures",
+ "hex",
+ "ipnet",
+ "maxminddb",
+ "mime_guess",
+ "netstat2",
+ "parking_lot",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sysinfo",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
+ "windows 0.61.3",
+]
+
+[[package]]
+name = "sherwatch-desktop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sherwatch",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-single-instance",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

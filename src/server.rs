@@ -96,7 +96,7 @@ async fn guard_local(State(s): S, req: axum::extract::Request, next: axum::middl
         Some(o) => allowed_origins.iter().any(|a| a.eq_ignore_ascii_case(o.trim_end_matches('/'))),
     };
     if !host_ok || !origin_ok {
-        return (StatusCode::FORBIDDEN, "NetMonitor only answers the local dashboard").into_response();
+        return (StatusCode::FORBIDDEN, "SherWatch only answers the local dashboard").into_response();
     }
     next.run(req).await
 }
@@ -183,7 +183,7 @@ async fn process_detail(State(s): S, Path(pid): Path<u32>) -> Response {
     let listeners: Vec<Listener> = s.listeners.iter().filter(|l| l.pid == pid).map(|l| l.clone()).collect();
     let mut v = serde_json::to_value(&p).unwrap();
     v["trusted"] = json!(!p.exe.is_empty() && s.is_trusted(&p.exe, p.meta.sha256.as_deref()));
-    // Firewall state for the drawer button: the NetMonitor rule recorded for this executable, if any.
+    // Firewall state for the drawer button: the SherWatch rule recorded for this executable, if any.
     let blocked = if p.exe.is_empty() {
         None
     } else {

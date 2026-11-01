@@ -1,4 +1,4 @@
-# NetMonitor Command Center
+# SherWatch Command Center
 
 A Windows network security monitor written in Rust. It shows every process that sends or
 receives data, attributes bytes to processes without any driver, analyses the traffic for
@@ -95,7 +95,7 @@ web/                 dashboard (plain HTML, CSS, JS; embedded in the binary at r
 web/vendor/          chart.js, globe.gl, d3, topojson, world-atlas (vendored, offline)
 data/feeds/          downloaded threat feeds and feeds.json (runtime-added feeds)
 data/geo/            DB-IP Lite city database
-data/netmon.db       SQLite history (alerts, traffic, connections, DNS, blocks, known apps)
+data/sherwatch.db       SQLite history (alerts, traffic, connections, DNS, blocks, known apps)
 data/logs/           log output when started through run.cmd
 docs/                documentation
 tools/               rustup installer and npm packages used to vendor the frontend libraries
@@ -112,7 +112,7 @@ tools/               rustup installer and npm packages used to vendor the fronte
 
 ## Privacy
 
-- Traffic metadata, alerts and history are stored only in `data/netmon.db` on this machine.
+- Traffic metadata, alerts and history are stored only in `data/sherwatch.db` on this machine.
 - The local API answers only the dashboard: requests from other origins or with a foreign
   Host header are rejected.
 - The assistant's default free web model receives the facts about the item you ask about.

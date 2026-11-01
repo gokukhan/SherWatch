@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "NetMonitor",
+  "productName": "SherWatch",
   "version": "0.1.0",
-  "identifier": "com.netmonitor.commandcenter",
+  "identifier": "com.sherkhan.sherwatch",
   "build": {
     "frontendDist": "dist"
   },
@@ -14,6 +14,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Sher Khan",
     "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
@@ -22,7 +23,7 @@
       "icons/icon.ico"
     ],
     "shortDescription": "Per-process network monitoring and threat analysis",
-    "longDescription": "NetMonitor Command Center watches every program that sends data out of this PC, matches it against threat-intelligence feeds and known-exploited-vulnerability catalogues, and explains what it sees.",
+    "longDescription": "SherWatch Command Center watches every program that sends data out of this PC, matches it against threat-intelligence feeds and known-exploited-vulnerability catalogues, and explains what it sees.",
     "windows": {
       "nsis": {
         "installMode": "perMachine",

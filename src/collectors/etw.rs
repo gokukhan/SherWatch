@@ -44,7 +44,9 @@ fn decide_ports(state: &AppState, pid: u32, raw_sport: u16, raw_dport: u16, dadd
 }
 const KERNEL_NETWORK: &str = "7dd42a49-5329-4832-8dfd-43d979153a88";
 const DNS_CLIENT: &str = "1c95126e-7eea-49a9-a3fe-a378b03ddb4d";
-const TRACE_NAME: &str = "NetMonitorCommandCenter";
+const TRACE_NAME: &str = "SherWatch";
+/// Session name used before the rename; stopped at start in case a crashed old build left it running.
+const LEGACY_TRACE_NAME: &str = "NetMonitorCommandCenter";
 
 fn net_callback(record: &EventRecord, locator: &SchemaLocator) {
     let Some(state) = STATE.get() else { return };
@@ -138,14 +140,16 @@ fn dns_callback(record: &EventRecord, locator: &SchemaLocator) {
 
 pub fn start(state: Arc<AppState>) {
     let _ = STATE.set(state.clone());
-    // A trace with our name may linger from a crashed run; stop it first.
-    let _ = crate::util::quiet(
-        std::process::Command::new("logman")
-            .args(["stop", TRACE_NAME, "-ets"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null()),
-    )
-    .status();
+    // A trace with our name may linger from a crashed run; stop it first (old name too).
+    for name in [TRACE_NAME, LEGACY_TRACE_NAME] {
+        let _ = crate::util::quiet(
+            std::process::Command::new("logman")
+                .args(["stop", name, "-ets"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null()),
+        )
+        .status();
+    }
 
     let net = Provider::by_guid(KERNEL_NETWORK).add_callback(net_callback).build();
     let dns = Provider::by_guid(DNS_CLIENT)

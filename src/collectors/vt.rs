@@ -22,7 +22,7 @@ pub fn start(state: Arc<AppState>) {
         return;
     }
     tokio::spawn(async move {
-        let client = reqwest::Client::builder().user_agent("NetMonitor/0.1").build().unwrap();
+        let client = reqwest::Client::builder().user_agent("SherWatch/0.1").build().unwrap();
         loop {
             let next = QUEUE.get_or_init(|| Mutex::new(vec![])).lock().unwrap().pop();
             let Some((exe, sha)) = next else {

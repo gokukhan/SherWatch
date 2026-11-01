@@ -1,8 +1,8 @@
 [package]
-name = "netmon"
+name = "sherwatch"
 version = "0.1.0"
 edition = "2021"
-description = "NetMonitor Command Center - per-process network monitoring and threat analysis for Windows"
+description = "SherWatch Command Center - per-process network monitoring and threat analysis for Windows"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

@@ -197,7 +197,7 @@ applied while the table refreshes.
 
 ## History
 
-Everything older than the live window comes from `data/netmon.db`. Pick a range (1 h to
+Everything older than the live window comes from `data/sherwatch.db`. Pick a range (1 h to
 30 days). The traffic chart stacks the top seven applications and folds the rest into
 "Other"; colours stay attached to the same application across ranges. Below it: alerts
 over time and the closed-connection log with duration, bytes and flags. History is pruned

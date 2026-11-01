@@ -40,12 +40,18 @@ pub fn kill_process(pid: u32) -> Result<String, String> {
     run("taskkill", &["/PID", &pid.to_string(), "/F", "/T"]).map(|s| s.trim().to_string())
 }
 
-fn rule_name(kind: &str, target: &str) -> String {
-    let short: String = target.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-').take(60).collect();
-    format!("NetMonitor block {kind} {short}")
+/// Current rule prefix plus the one used before the project was renamed, so old rules stay manageable.
+const RULE_PREFIXES: [&str; 2] = ["SherWatch block ", "NetMonitor block "];
+fn is_our_rule(name: &str) -> bool {
+    RULE_PREFIXES.iter().any(|p| name.starts_with(p))
 }
 
-/// The firewall rule name NetMonitor uses for an executable (a short hash of the full path keeps two
+fn rule_name(kind: &str, target: &str) -> String {
+    let short: String = target.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-').take(60).collect();
+    format!("SherWatch block {kind} {short}")
+}
+
+/// The firewall rule name SherWatch uses for an executable (a short hash of the full path keeps two
 /// programs with the same file name apart).
 pub fn exe_rule_name(exe: &str) -> String {
     let digest = {
@@ -55,7 +61,7 @@ pub fn exe_rule_name(exe: &str) -> String {
     rule_name("app", &format!("{} {digest}", std::path::Path::new(exe).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()))
 }
 
-/// Names of the NetMonitor rules that actually exist in Windows Firewall right now (outbound direction;
+/// Names of the SherWatch rules that actually exist in Windows Firewall right now (outbound direction;
 /// the inbound twin is created and deleted together with it).
 pub fn firewall_rules() -> std::collections::HashSet<String> {
     let mut set = std::collections::HashSet::new();
@@ -63,7 +69,7 @@ pub fn firewall_rules() -> std::collections::HashSet<String> {
         for line in out.lines() {
             if let Some(rest) = line.trim_start().strip_prefix("Rule Name:") {
                 let name = rest.trim();
-                if name.starts_with("NetMonitor block ") {
+                if is_our_rule(name) {
                     set.insert(name.to_string());
                 }
             }
@@ -101,8 +107,8 @@ pub fn block_ip(state: &AppState, ip: &str) -> Result<String, String> {
 }
 
 pub fn unblock(state: &AppState, rule: &str) -> Result<String, String> {
-    if !rule.starts_with("NetMonitor block ") {
-        return Err("not a NetMonitor rule".into());
+    if !is_our_rule(rule) {
+        return Err("not a SherWatch rule".into());
     }
     let r = run("netsh", &["advfirewall", "firewall", "delete", "rule", &format!("name={rule}")]);
     state.db.send(DbMsg::Unblock { rule: rule.to_string() });

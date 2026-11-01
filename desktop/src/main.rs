@@ -1,4 +1,4 @@
-//! NetMonitor desktop: a native window and tray icon around the shared `netmon` library.
+//! SherWatch desktop: a native window and tray icon around the shared `sherwatch` library.
 //! The window simply shows the same dashboard the browser version serves, so both stay in sync.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -17,45 +17,45 @@ fn show_main(app: &AppHandle) {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let no_elevate = args.iter().any(|a| a == "--no-elevate");
-    let admin = netmon::is_admin();
-    if !admin && !no_elevate && netmon::relaunch_elevated() {
+    let admin = sherwatch::is_admin();
+    if !admin && !no_elevate && sherwatch::relaunch_elevated() {
         return;
     }
 
-    let root = netmon::data_root();
+    let root = sherwatch::data_root();
     let _ = std::fs::create_dir_all(root.join("data").join("logs"));
-    netmon::init_logging(Some(&root.join("data").join("logs").join("netmon-desktop.log")));
+    sherwatch::init_logging(Some(&root.join("data").join("logs").join("sherwatch-desktop.log")));
 
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .setup(move |app| {
             // Start the monitor on Tauri's Tokio runtime and keep the HTTP server running in the background.
-            let running = tauri::async_runtime::block_on(netmon::start(root.clone(), admin))?;
+            let running = tauri::async_runtime::block_on(sherwatch::start(root.clone(), admin))?;
             let url: tauri::Url = running.url.parse()?;
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = netmon::serve(running).await {
+                if let Err(e) = sherwatch::serve(running).await {
                     tracing::error!("server stopped: {e}");
                 }
             });
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("NetMonitor Command Center")
+                .title("SherWatch Command Center")
                 .inner_size(1500.0, 950.0)
                 .min_inner_size(900.0, 600.0)
                 .build()?;
 
-            let open = MenuItem::with_id(app, "open", "Open NetMonitor", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "Open SherWatch", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit (stops monitoring)", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
             TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().cloned().expect("bundle icon"))
-                .tooltip("NetMonitor Command Center")
+                .tooltip("SherWatch Command Center")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, e| match e.id.as_ref() {
                     "open" => show_main(app),
                     "quit" => {
-                        netmon::shutdown();
+                        sherwatch::shutdown();
                         app.exit(0);
                     }
                     _ => {}
@@ -80,7 +80,7 @@ fn main() {
     match result {
         Ok(app) => app.run(|_, event| {
             if let tauri::RunEvent::Exit = event {
-                netmon::shutdown();
+                sherwatch::shutdown();
             }
         }),
         Err(e) => {

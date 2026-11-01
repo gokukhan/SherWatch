@@ -1,4 +1,4 @@
-/* NetMonitor Command Center - dashboard application */
+/* SherWatch Command Center - dashboard application */
 (() => {
 'use strict';
 
@@ -213,7 +213,7 @@ function setUnacked(n) {
 function desktopNotify(a) {
   try {
     if (localStorage.getItem('nm-notify') !== '1' || !('Notification' in window) || Notification.permission !== 'granted') return;
-    const n = new Notification(`NetMonitor: ${a.severity.toUpperCase()} alert`, { body: a.title, tag: 'nm-' + a.id, silent: a.severity !== 'critical' });
+    const n = new Notification(`SherWatch: ${a.severity.toUpperCase()} alert`, { body: a.title, tag: 'nm-' + a.id, silent: a.severity !== 'critical' });
     n.onclick = () => { window.focus(); setView('alerts'); n.close(); };
   } catch {}
 }

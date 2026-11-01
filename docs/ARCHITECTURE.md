@@ -1,10 +1,10 @@
 # Architecture
 
-NetMonitor is a single Rust binary that embeds its web dashboard. It has four layers:
+SherWatch is a single Rust binary that embeds its web dashboard. It has four layers:
 collectors, shared state, analysis, and the HTTP/WebSocket server.
 
 ```
- Windows                      netmon.exe                                     browser
+ Windows                      sherwatch.exe                                     browser
  ───────                      ──────────                                     ───────
  TCP/UDP tables ──► conntable ─┐                                   ┌─► REST /api/*
  ETW kernel-network ──► etw ───┼──► AppState (DashMaps, ring       │
@@ -16,7 +16,7 @@ collectors, shared state, analysis, and the HTTP/WebSocket server.
                                           │
  feeds (HTTP) ──► intel ◄─────────────────┘ lookups
  DB-IP mmdb ──► geo   ◄───────────────────┘
-                                      db thread ──► SQLite data/netmon.db
+                                      db thread ──► SQLite data/sherwatch.db
 ```
 
 ## Source map

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NetMonitor Command Center</title>
+<title>SherWatch Command Center</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%230d0d0d' stroke='%233987e5' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%233987e5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -13,7 +13,7 @@
     <div class="brand">
       <div class="brand-mark"></div>
       <div>
-        <div class="brand-name">NetMonitor</div>
+        <div class="brand-name">SherWatch</div>
         <div class="brand-sub">Command Center</div>
       </div>
     </div>
@@ -242,7 +242,7 @@
           <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24" class="active">24 h</button><button data-h="168">7 d</button><button data-h="720">30 d</button>
         </div>
         <span class="spacer"></span>
-        <span class="panel-sub">stored locally in data/netmon.db</span>
+        <span class="panel-sub">stored locally in data/sherwatch.db</span>
       </div>
       <div class="panel">
         <div class="panel-head"><h2>Traffic by application</h2><div class="legend" id="hist-legend"></div></div>
@@ -273,7 +273,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Firewall blocks</h2></div>
-          <p class="muted">Rules created by NetMonitor in Windows Defender Firewall.</p>
+          <p class="muted">Rules created by SherWatch in Windows Defender Firewall.</p>
           <div class="table-wrap"><table class="tbl" id="block-table"><thead><tr><th>Kind</th><th>Target</th><th>Created</th><th>State</th><th></th></tr></thead><tbody></tbody></table></div>
           <div class="row-gap">
             <input id="block-ip-input" placeholder="block an IP address">
@@ -282,7 +282,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Action log</h2><span class="count" id="audit-count"></span></div>
-          <p class="muted">Everything NetMonitor changed on this PC at your request, newest first. <b>revert</b> undoes a block, an allow or a trust change; a terminated process has to be started again by you.</p>
+          <p class="muted">Everything SherWatch changed on this PC at your request, newest first. <b>revert</b> undoes a block, an allow or a trust change; a terminated process has to be started again by you.</p>
           <div class="table-wrap"><table class="tbl" id="audit-table"><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody></tbody></table></div>
         </div>
         <div class="panel">
@@ -309,7 +309,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>About</h2></div>
-          <p class="muted">NetMonitor Command Center. Everything runs locally. Data sources: abuse.ch Feodo Tracker and SSL Blacklist, Spamhaus DROP, IPsum, Tor exit list, Blackbook, OpenPhish. GeoIP by <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a> (CC BY 4.0). Globe by globe.gl / three.js, charts by Chart.js, map data from world-atlas (Natural Earth).</p>
+          <p class="muted">SherWatch Command Center, by Sher Khan. Everything runs locally. Data sources: abuse.ch Feodo Tracker and SSL Blacklist, Spamhaus DROP, IPsum, Tor exit list, Blackbook, OpenPhish. GeoIP by <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a> (CC BY 4.0). Globe by globe.gl / three.js, charts by Chart.js, map data from world-atlas (Natural Earth).</p>
         </div>
       </div>
     </section>

@@ -1,8 +1,8 @@
-//! NetMonitor Command Center core: collectors, analysis, intel, database and the HTTP/WebSocket server.
+//! SherWatch Command Center core: collectors, analysis, intel, database and the HTTP/WebSocket server.
 //!
 //! Two front ends share this library and therefore stay in sync by construction:
-//! - `src/main.rs` (binary `netmon`): starts the server and opens the dashboard in the default browser.
-//! - `desktop/` (binary `netmon-desktop`): a Tauri window and tray icon around the same server.
+//! - `src/main.rs` (binary `sherwatch`): starts the server and opens the dashboard in the default browser.
+//! - `desktop/` (binary `sherwatch-desktop`): a Tauri window and tray icon around the same server.
 
 pub mod actions;
 pub mod ai;
@@ -50,7 +50,7 @@ pub fn project_root() -> Option<PathBuf> {
     candidates.into_iter().find(|c| c.join("config.toml").exists())
 }
 
-/// Root folder for an installed copy that has no config.toml next to it: `%LOCALAPPDATA%\NetMonitor`,
+/// Root folder for an installed copy that has no config.toml next to it: `%LOCALAPPDATA%\SherWatch`,
 /// created with the default config on first use. Development checkouts keep using the project folder.
 pub fn data_root() -> PathBuf {
     if let Some(r) = project_root() {
@@ -59,7 +59,12 @@ pub fn data_root() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let root = base.join("NetMonitor");
+    let root = base.join("SherWatch");
+    // Data folder from before the rename.
+    let legacy = base.join("NetMonitor");
+    if !root.exists() && legacy.exists() {
+        let _ = std::fs::rename(&legacy, &root);
+    }
     let _ = std::fs::create_dir_all(root.join("data").join("logs"));
     let cfg = root.join("config.toml");
     if !cfg.exists() {
@@ -95,14 +100,14 @@ pub fn relaunch_elevated() -> bool {
 
 /// Console logging, or file logging for the windowed desktop build (which has no console).
 pub fn init_logging(file: Option<&Path>) {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,netmon=info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sherwatch=info"));
     match file.and_then(|p| std::fs::OpenOptions::new().create(true).append(true).open(p).ok()) {
         Some(f) => tracing_subscriber::fmt().with_env_filter(filter).with_target(false).with_ansi(false).with_writer(std::sync::Mutex::new(f)).init(),
         None => tracing_subscriber::fmt().with_env_filter(filter).with_target(false).init(),
     }
 }
 
-/// Bind the dashboard port. If another NetMonitor instance holds it (for example a test run, the browser
+/// Bind the dashboard port. If another SherWatch instance holds it (for example a test run, the browser
 /// version while the desktop one starts, or an un-elevated copy), ask it to shut down and take the port:
 /// the latest launch wins.
 async fn bind_taking_over(addr: &str) -> anyhow::Result<tokio::net::TcpListener> {
@@ -113,14 +118,14 @@ async fn bind_taking_over(addr: &str) -> anyhow::Result<tokio::net::TcpListener>
     }
     let client = reqwest::Client::builder().timeout(std::time::Duration::from_secs(3)).build()?;
     let probe = client.get(format!("http://{addr}/api/overview")).send().await;
-    let is_netmon = match probe {
+    let is_sherwatch = match probe {
         Ok(r) => r.text().await.map(|t| t.contains("\"app_version\"")).unwrap_or(false),
         Err(_) => false,
     };
-    if !is_netmon {
+    if !is_sherwatch {
         anyhow::bail!("port {addr} is in use by another program; change [server] port in config.toml");
     }
-    tracing::info!("another NetMonitor instance is on {addr}; asking it to stop");
+    tracing::info!("another SherWatch instance is on {addr}; asking it to stop");
     let _ = client.post(format!("http://{addr}/api/shutdown")).send().await;
     for _ in 0..30 {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -142,10 +147,18 @@ pub struct Running {
 /// Start everything except the HTTP accept loop. Must be called from inside a Tokio runtime.
 pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
     let cfg = config::load(&root.join("config.toml"));
-    tracing::info!("NetMonitor Command Center v{} starting in {}", APP_VERSION, root.display());
+    tracing::info!("SherWatch Command Center v{} starting in {}", APP_VERSION, root.display());
     tracing::info!("administrator: {admin}");
 
-    let db = db::Db::open(root.join("data").join("netmon.db"))?;
+    // Database from before the rename: carry history over (the app is not running yet, so the WAL files move too).
+    for suffix in ["", "-wal", "-shm"] {
+        let old = root.join("data").join(format!("netmon.db{suffix}"));
+        let new = root.join("data").join(format!("sherwatch.db{suffix}"));
+        if old.exists() && !new.exists() {
+            let _ = std::fs::rename(&old, &new);
+        }
+    }
+    let db = db::Db::open(root.join("data").join("sherwatch.db"))?;
 
     // Fast start: open what is on disk now; downloads happen in the background after the server is up.
     let geo_path = root.join(&cfg.geo.mmdb);
@@ -182,7 +195,7 @@ pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
             if !s.cfg.geo.detect_public_ip {
                 return;
             }
-            let client = reqwest::Client::builder().user_agent("NetMonitor/0.1").timeout(std::time::Duration::from_secs(10)).build().unwrap();
+            let client = reqwest::Client::builder().user_agent("SherWatch/0.1").timeout(std::time::Duration::from_secs(10)).build().unwrap();
             if let Ok(r) = client.get("https://api.ipify.org").send().await {
                 if let Ok(text) = r.text().await {
                     if let Ok(ip) = text.trim().parse::<std::net::IpAddr>() {

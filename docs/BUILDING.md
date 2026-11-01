@@ -14,7 +14,7 @@
 cargo build --release
 ```
 
-Output: `target\release\netmon.exe`. The release build embeds everything under `web/` into
+Output: `target\release\sherwatch.exe`. The release build embeds everything under `web/` into
 the executable (rust-embed), so the binary is self-contained apart from `config.toml` and
 the `data/` folder, which it creates next to the project root it finds.
 
@@ -33,7 +33,7 @@ For the full feature set run the binary from an elevated terminal or through `ru
 ## Logging
 
 The `RUST_LOG` environment variable controls verbosity, for example
-`RUST_LOG=netmon=debug`. `run.cmd` writes to `data\logs\netmon.log`.
+`RUST_LOG=sherwatch=debug`. `run.cmd` writes to `data\logs\sherwatch.log`.
 
 ## Two front ends, one library
 
@@ -42,8 +42,8 @@ two thin binaries that cannot drift apart because neither contains any monitorin
 
 | Binary | Where | What it adds |
 |---|---|---|
-| `netmon.exe` (browser version) | `src/main.rs` | console logging, Ctrl+C handling, opens the dashboard in the default browser |
-| `NetMonitor.exe` (desktop version) | `desktop/` | a Tauri window showing the same dashboard, a tray icon, close-to-tray, single instance, an NSIS installer |
+| `sherwatch.exe` (browser version) | `src/main.rs` | console logging, Ctrl+C handling, opens the dashboard in the default browser |
+| `SherWatch.exe` (desktop version) | `desktop/` | a Tauri window showing the same dashboard, a tray icon, close-to-tray, single instance, an NSIS installer |
 
 The desktop window loads `http://127.0.0.1:<port>/` from the embedded server, exactly like a
 browser tab would, so `web/` is shared unchanged and the dashboard's Host/Origin guard
@@ -65,13 +65,13 @@ npx --prefix tools/npm tauri build --config desktop/tauri.conf.json
 Or without the CLI, for a plain executable with no installer:
 
 ```
-cargo build --release -p netmon-desktop
+cargo build --release -p sherwatch-desktop
 ```
 
 Outputs:
 
-- `target\release\netmon-desktop.exe`: the desktop app itself.
-- `target\release\bundle\nsis\NetMonitor_<version>_x64-setup.exe`: the installer (only
+- `target\release\sherwatch-desktop.exe`: the desktop app itself.
+- `target\release\bundle\nsis\SherWatch_<version>_x64-setup.exe`: the installer (only
   from `tauri build`). The first `tauri build` downloads NSIS into the CLI's cache.
 
 The installer is unsigned until a code-signing certificate is configured, so SmartScreen
@@ -84,7 +84,7 @@ The app icon is drawn by `tools/make_icon.py` (Pillow) and the icon set under
 Development run of the desktop version (debug build, reads `web/` from disk):
 
 ```
-cargo run -p netmon-desktop -- --no-elevate
+cargo run -p sherwatch-desktop -- --no-elevate
 ```
 
 ## Where the app looks for its files
@@ -92,9 +92,9 @@ cargo run -p netmon-desktop -- --no-elevate
 `data_root()` in `src/lib.rs` walks up from the executable's folder looking for
 `config.toml`. Running from `target\release` or `target\debug` therefore finds the
 project's `config.toml` and `data/`. An installed copy (under Program Files, no
-`config.toml` next to it) uses `%LOCALAPPDATA%\NetMonitor\` instead and writes the default
+`config.toml` next to it) uses `%LOCALAPPDATA%\SherWatch\` instead and writes the default
 `config.toml` there on first start; the database, feeds, GeoIP file and logs
-(`data\logs\netmon-desktop.log`) live under that folder.
+(`data\logs\sherwatch-desktop.log`) live under that folder.
 
 ## Frontend libraries
 
