@@ -35,6 +35,34 @@ const pad = (n) => String(n).padStart(2, '0');
 function timeStr(ts) { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
 function dateTimeStr(ts) { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// ---------- filter cards and segmented sort controls (shared by every list view) ----------
+// A card row replaces dropdowns: each card shows a count, click selects it, clicking again removes it,
+// "all" clears. Cards in the same `group` are exclusive (TCP vs UDP); other selections combine (AND).
+const cardState = {}, cardHtml = {}, cardGroups = {};
+function cardSel(id) { return cardState[id] || (cardState[id] = new Set()); }
+function renderCards(id, cards) {
+  const sel = cardSel(id), any = sel.size > 0;
+  cardGroups[id] = Object.fromEntries(cards.filter((c) => c.group).map((c) => [c.key, c.group]));
+  const html = cards.map((c) => {
+    const cls = c.key === 'all' ? (any ? '' : 'active') : sel.has(c.key) ? 'active' : any ? 'dim' : '';
+    return `<button class="sev-card ${cls}" data-key="${c.key}" style="--card:${c.color || 'var(--text-2)'}"${c.title ? ` title="${esc(c.title)}"` : ''}><span class="sev-card-label">${esc(c.label)}</span><span class="sev-card-value">${c.n}</span><span class="sev-card-sub">${esc(c.sub || '')}</span></button>`;
+  }).join('');
+  if (cardHtml[id] !== html) { cardHtml[id] = html; $('#' + id).innerHTML = html; }
+}
+function bindCards(id, onChange) {
+  $('#' + id).addEventListener('click', (e) => {
+    const b = e.target.closest('.sev-card'); if (!b) return;
+    const sel = cardSel(id), k = b.dataset.key, groups = cardGroups[id] || {};
+    if (k === 'all') sel.clear();
+    else if (sel.has(k)) sel.delete(k);
+    else { if (groups[k]) for (const o of [...sel]) if (groups[o] === groups[k]) sel.delete(o); sel.add(k); }
+    onChange();
+  });
+}
+function segValue(id) { return $(`#${id} button.active`)?.dataset.v ?? ''; }
+function bindSeg(id, onChange) { $$(`#${id} button`).forEach((b) => b.addEventListener('click', () => { $$(`#${id} button`).forEach((x) => x.classList.remove('active')); b.classList.add('active'); onChange(); })); }
+const pct = (n, d) => d ? `${Math.round(100 * n / d)}%` : '';
 function flag(cc) {
   if (!cc || cc.length !== 2 || cc === '??') return '';
   return String.fromCodePoint(...cc.toUpperCase().split('').map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
@@ -405,7 +433,7 @@ async function initGlobe() {
     // Country name labels at centroids; tiny countries are skipped unless they carry traffic.
     countryLabels = worldFeatures.map((f) => { const [lon, lat] = d3.geoCentroid(f); return { kind: 'country', name: f.properties?.name || '', lat, lon, area: d3.geoArea(f) }; }).filter((c) => c.name);
   } catch (e) { console.warn('world map unavailable', e); worldFeatures = []; }
-  const setRotate = () => { if (globe) globe.controls().autoRotate = $('#globe-rotate').checked && !globeHoverPaused; };
+  const setRotate = globeSetRotate;
   const hoverPause = (obj) => { globeHoverPaused = !!obj; setRotate(); };
   globe = Globe({ animateIn: true })(document.createElement('div'))
     .backgroundColor('rgba(0,0,0,0)')
@@ -421,14 +449,21 @@ async function initGlobe() {
     .arcAltitudeAutoScale(0.4).arcStroke(0.45).arcDashLength(0.4).arcDashGap(0.25).arcDashAnimateTime((d) => d.risk >= 25 ? 900 : 1800)
     .pointsData([]).pointLat('lat').pointLng('lon').pointColor((d) => riskColor(d.risk)).pointAltitude((d) => 0.01 + Math.min(0.15, Math.log10(1 + d.bytes_in + d.bytes_out) / 60)).pointRadius(0.32)
     .pointLabel((d) => `<div class="globe-tip"><b>${esc(d.hostname || d.ip)}</b>${d.owner ? ` · ${esc(d.owner)}` : ''}<br>${esc(d.ip)} · ${esc([d.city, d.country_name].filter(Boolean).join(', '))}<br>${esc((d.procs || []).join(', '))}<br>↑ ${fmtBytes(d.bytes_out)} · ↓ ${fmtBytes(d.bytes_in)}${d.intel ? '<br><b style="color:' + C.critical + '">' + esc(d.intel) + '</b>' : ''}</div>`)
-    .onPointClick((d) => { setView('connections'); setSearch(d.ip); refreshView(true); })
+    // Clicking a destination point, a city label or a country label opens the destination card
+    // (every process talking to that place, with links into their details). Clicking the globe closes it.
+    .onPointClick((d) => showDestPop({ kind: 'ip', title: d.hostname || d.ip, place: [d.city, d.country_name].filter(Boolean).join(', '), ips: new Set([d.ip]), search: d.ip }))
+    .onLabelClick((d) => {
+      if (d.kind === 'city') showDestPop({ kind: 'city', title: d.city || d.text, place: d.countryName || '', ips: new Set(d.ips || []), search: d.city || '' });
+      else if (d.kind === 'country') { const ips = S.geo.filter((g) => g.country_name === d.name).map((g) => g.ip); if (ips.length) showDestPop({ kind: 'country', title: d.name, place: '', ips: new Set(ips), search: d.name }); }
+    })
+    .onGlobeClick(() => closeDestPop())
     .onPointHover(hoverPause).onPolygonHover(hoverPause).onArcHover(hoverPause).onLabelHover(hoverPause)
     .arcsTransitionDuration(0).pointsTransitionDuration(0).labelsTransitionDuration(0)
     .labelsData([]).labelLat('lat').labelLng('lon')
     .labelText((d) => d.kind === 'country' ? d.name : d.text)
     .labelSize((d) => d.kind === 'country' ? 0.55 : 0.8).labelDotRadius((d) => d.kind === 'country' ? 0 : 0.28)
     .labelColor((d) => d.kind === 'country' ? 'rgba(195,194,183,0.55)' : (d.risk >= 25 ? 'rgba(255,200,190,0.95)' : 'rgba(240,239,236,0.95)')).labelResolution(2).labelAltitude((d) => d.kind === 'country' ? 0.006 : 0.014)
-    .labelLabel((d) => d.kind === 'country' ? `<div class="globe-tip">${esc(d.name)}</div>` : `<div class="globe-tip"><b>${esc(d.text)}</b><br>${esc(d.hosts.slice(0, 8).join('<br>'))}${d.hosts.length > 8 ? '<br>…' : ''}</div>`)
+    .labelLabel((d) => d.kind === 'country' ? `<div class="globe-tip">${esc(d.name)}<br><span class="muted">click for processes</span></div>` : `<div class="globe-tip"><b>${esc(d.text)}</b><br>${d.hosts.slice(0, 8).map(esc).join('<br>')}${d.hosts.length > 8 ? '<br>…' : ''}<br><span class="muted">click for processes</span></div>`)
     .ringsData([]).ringLat('lat').ringLng('lon').ringColor(() => (t) => `rgba(57,135,229,${1 - t})`).ringMaxRadius(3.5).ringPropagationSpeed(1.2).ringRepeatPeriod(1400);
   const mat = globe.globeMaterial();
   mat.color.set('#10141a'); mat.emissive.set('#0a1424'); mat.emissiveIntensity = 0.25; mat.shininess = 4;
@@ -441,12 +476,59 @@ async function initGlobe() {
   const mount = globe.renderer().domElement;
   mount.addEventListener('pointerenter', () => { globeHoverPaused = true; setRotate(); });
   mount.addEventListener('pointerleave', () => { globeHoverPaused = false; setRotate(); });
+  // Destination card lives inside the globe mount so it travels with the globe between views.
+  globePop = document.createElement('div'); globePop.className = 'globe-pop'; globePop.hidden = true;
+  mount.parentElement.appendChild(globePop);
+  globePop.addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    const sel = globePopSel;
+    if (act === 'close') return closeDestPop();
+    if (act === 'conns' && sel) { closeDestPop(); setView('connections'); setSearch(sel.search); refreshView(true); return; }
+    if (act === 'explain') { const b = e.target.closest('[data-act]'); const pid = +b.dataset.pid; openDrawer(pid); askAi({ kind: 'connection', pid, remote: b.dataset.ip, label: `${procName(pid)} → ${b.dataset.ip}`, target: 'drawer' }); return; }
+    const li = e.target.closest('li[data-pid]'); if (li) openDrawer(+li.dataset.pid);
+  });
   $('#globe-arcs').addEventListener('change', () => updateGlobe());
   $('#globe-labels').addEventListener('change', () => updateGlobe());
   new ResizeObserver(() => resizeGlobe()).observe($('#globe-host-overview'));
   new ResizeObserver(() => resizeGlobe()).observe($('#globe-host-full'));
   window.addEventListener('resize', resizeGlobe);
   mountGlobe($('#globe-host-overview'));
+}
+function globeSetRotate() { if (globe) globe.controls().autoRotate = $('#globe-rotate').checked && !globeHoverPaused && !globePopOpen; }
+// ---------- destination card (click on a point, city or country) ----------
+let globePop = null, globePopOpen = false, globePopSel = null;
+function showDestPop(sel) { if (!globePop) return; globePopSel = sel; globePopOpen = true; globePop.hidden = false; renderDestPop(); globeSetRotate(); }
+function closeDestPop() { if (!globePopOpen) return; globePopOpen = false; globePopSel = null; globePop.hidden = true; globeSetRotate(); }
+function renderDestPop() {
+  if (!globePopOpen || !globePopSel) return;
+  const sel = globePopSel, ips = sel.ips;
+  const conns = S.conns.filter((c) => ips.has(c.remote_addr));
+  const dests = S.geo.filter((d) => ips.has(d.ip));
+  const byPid = new Map();
+  for (const c of conns) {
+    const p = byPid.get(c.pid) || { pid: c.pid, conns: 0, out: 0, in: 0, ports: new Set(), ips: new Set() };
+    p.conns++; p.out += c.bytes_out || 0; p.in += c.bytes_in || 0; p.ports.add(c.remote_port); p.ips.add(c.remote_addr);
+    byPid.set(c.pid, p);
+  }
+  // Destinations whose connections already closed still list the process names the server remembers.
+  const remembered = new Set(dests.flatMap((d) => d.procs || []));
+  byPid.forEach((p) => remembered.delete(procName(p.pid)));
+  const procs = [...byPid.values()].sort((a, b) => (b.out + b.in) - (a.out + a.in) || b.conns - a.conns);
+  const intel = dests.find((d) => d.intel)?.intel;
+  const owner = [...new Set(dests.map((d) => d.owner).filter(Boolean))].slice(0, 2).join(', ');
+  const tOut = dests.reduce((a, d) => a + (d.bytes_out || 0), 0), tIn = dests.reduce((a, d) => a + (d.bytes_in || 0), 0);
+  const html = `<div class="globe-pop-head"><div><b>${esc(sel.title)}</b>${sel.place ? `<div class="muted">${esc(sel.place)}</div>` : ''}</div><button class="icon-btn" data-act="close" title="Close">✕</button></div>
+    <div class="globe-pop-sub">${intel ? `<span class="tag intel">${esc(intel)}</span>` : ''}${owner ? `<span class="owner">${esc(owner)}</span> · ` : ''}${ips.size} address${ips.size > 1 ? 'es' : ''} · ${conns.length} open connection${conns.length !== 1 ? 's' : ''} · ↑ ${fmtBytes(tOut)} · ↓ ${fmtBytes(tIn)}</div>
+    ${ips.size <= 4 ? `<div class="mono muted globe-pop-ips">${[...ips].map(esc).join('<br>')}</div>` : ''}
+    <h4>Processes sending here</h4>
+    <ul class="globe-pop-list">${procs.map((p) => `<li data-pid="${p.pid}" title="Open the process details">
+        <span><b>${esc(procName(p.pid))}</b> <span class="muted">${p.pid}</span><div class="muted small">${p.conns} connection${p.conns > 1 ? 's' : ''} · port${p.ports.size > 1 ? 's' : ''} ${[...p.ports].slice(0, 4).join(', ')}${p.ports.size > 4 ? '…' : ''}</div></span>
+        <span class="num muted small">↑ ${fmtBytes(p.out)}<br>↓ ${fmtBytes(p.in)}</span>
+        <button class="btn sm ai" data-act="explain" data-pid="${p.pid}" data-ip="${esc([...p.ips][0])}" title="Ask the assistant about this connection">✦</button></li>`).join('')}
+      ${[...remembered].map((n) => `<li class="muted"><span>${esc(n)} <span class="small">(connection closed)</span></span></li>`).join('')}
+      ${!procs.length && !remembered.size ? '<li class="empty">No connection open right now</li>' : ''}</ul>
+    <div class="globe-pop-foot"><button class="btn sm" data-act="conns">All connections ${sel.kind === 'ip' ? 'to this address' : 'here'} →</button></div>`;
+  if (globePop.innerHTML !== html) globePop.innerHTML = html;
 }
 function mountGlobe(host) {
   if (!globe || globeHost === host) return;
@@ -504,8 +586,8 @@ function updateGlobe() {
   const fresh = new Map();
   for (const d of active) {
     const key = `${d.city || ''}|${d.country || ''}|${d.lat.toFixed(1)}|${d.lon.toFixed(1)}`;
-    const c = fresh.get(key) || { key, lat: d.lat, lon: d.lon, city: d.city, country: d.country, hosts: [], risk: 0, bytes: 0 };
-    c.hosts.push(d.hostname || shortIp(d.ip)); c.risk = Math.max(c.risk, d.risk); c.bytes += d.bytes_in + d.bytes_out;
+    const c = fresh.get(key) || { key, lat: d.lat, lon: d.lon, city: d.city, country: d.country, countryName: d.country_name, hosts: [], ips: [], risk: 0, bytes: 0 };
+    c.hosts.push(d.hostname || shortIp(d.ip)); c.ips.push(d.ip); c.risk = Math.max(c.risk, d.risk); c.bytes += d.bytes_in + d.bytes_out;
     fresh.set(key, c);
   }
   const keep = new Set();
@@ -514,9 +596,9 @@ function updateGlobe() {
     let o = cityLabelObjects.get(c.key);
     if (!o || o.text !== text || o.risk !== c.risk) {
       // A changed label gets a new object so the globe rebuilds just that one sprite.
-      o = { kind: 'city', key: c.key, lat: c.lat, lon: c.lon, text, hosts: c.hosts, risk: c.risk };
+      o = { kind: 'city', key: c.key, lat: c.lat, lon: c.lon, text, city: c.city, countryName: c.countryName, hosts: c.hosts, ips: c.ips, risk: c.risk };
       cityLabelObjects.set(c.key, o);
-    } else o.hosts = c.hosts;
+    } else { o.hosts = c.hosts; o.ips = c.ips; }
     keep.add(c.key);
     return o;
   });
@@ -524,6 +606,7 @@ function updateGlobe() {
   const labelSet = labelsOn ? [...countries, ...cityLabels] : countries;
   const labelKey = labelSet.map((l) => (l.kind === 'city' ? l.key + ':' + l.text : l.name)).join('|');
   if (labelKey !== globe.__labelKey) { globe.__labelKey = labelKey; globe.labelsData(labelSet); }
+  renderDestPop();
   $('#globe-sub').textContent = `${dests.length} destinations · ${active.length} active`;
   $('#globe-home').textContent = home ? `home: ${home.label}` : 'home location unknown';
 }
@@ -540,8 +623,19 @@ function renderDestTable() {
 // ---------- connections ----------
 function renderConnections() {
   const q = $('#global-search').value.trim().toLowerCase();
-  const proto = $('#f-proto').value, sort = $('#f-sort').value, pub = $('#f-public').checked;
-  let rows = S.conns.filter((c) => (!pub || c.scope === 'public') && (!proto || c.proto === proto));
+  const sel = cardSel('conn-cards'), sort = segValue('f-sort') || 'last_seen';
+  const all = S.conns, n = (f) => all.filter(f).length;
+  renderCards('conn-cards', [
+    { key: 'all', label: 'all', n: all.length, sub: 'open connections' },
+    { key: 'internet', group: 'scope', label: 'internet', n: n((c) => c.scope === 'public'), sub: 'public addresses', color: C.s1 },
+    { key: 'local', group: 'scope', label: 'local', n: n((c) => c.scope !== 'public'), sub: 'LAN, loopback, link-local' },
+    { key: 'tcp', group: 'proto', label: 'TCP', n: n((c) => c.proto === 'tcp'), sub: '' },
+    { key: 'udp', group: 'proto', label: 'UDP', n: n((c) => c.proto === 'udp'), sub: '' },
+    { key: 'intel', label: 'threat intel', n: n((c) => c.intel), sub: 'feed matches', color: C.critical },
+    { key: 'risky', label: 'risky', n: n((c) => c.risk >= 25), sub: 'process risk 25+', color: C.serious },
+  ]);
+  const scopeF = sel.has('internet') ? 'public' : sel.has('local') ? 'local' : '', protoF = sel.has('tcp') ? 'tcp' : sel.has('udp') ? 'udp' : '';
+  let rows = all.filter((c) => (!scopeF || (scopeF === 'public') === (c.scope === 'public')) && (!protoF || c.proto === protoF) && (!sel.has('intel') || c.intel) && (!sel.has('risky') || c.risk >= 25));
   if (q) rows = rows.filter((c) => [procName(c.pid), c.remote_addr, c.hostname, c.country_name, c.city, String(c.pid), String(c.remote_port)].some((v) => v && String(v).toLowerCase().includes(q)));
   rows.sort((a, b) => sort === 'first_seen' ? a.first_seen - b.first_seen : (b[sort] || 0) - (a[sort] || 0));
   $('#conn-count').textContent = `${rows.length} of ${S.conns.length}`;
@@ -558,7 +652,8 @@ function renderConnections() {
   $$('#conn-table tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) openDrawer(+tr.dataset.pid); }));
   $$('#conn-table .block-ip').forEach((b) => b.addEventListener('click', () => blockIp(b.dataset.ip)));
 }
-['#f-proto', '#f-sort', '#f-public'].forEach((s) => $(s).addEventListener('change', renderConnections));
+cardSel('conn-cards').add('internet'); // default: internet connections only, like before
+bindCards('conn-cards', renderConnections); bindSeg('f-sort', renderConnections);
 // The search box filters every list view; the ✕ shows whenever a term is set so a stale term is never invisible.
 function setSearch(v) { $('#global-search').value = v; $('#search-clear').hidden = !v; }
 function rerenderCurrentView() { if (S.view === 'connections') renderConnections(); else if (S.view === 'processes') renderProcesses(); else if (S.view === 'dns') renderDns(); else if (S.view === 'alerts') renderAlerts(); else if (S.view === 'inventory') renderInventory(); }
@@ -568,8 +663,19 @@ $('#search-clear').addEventListener('click', () => { setSearch(''); rerenderCurr
 // ---------- processes ----------
 function renderProcesses() {
   const q = $('#global-search').value.trim().toLowerCase();
-  const sort = $('#p-sort').value, aliveOnly = $('#p-alive').checked;
-  let rows = S.procs.filter((p) => !aliveOnly || p.alive);
+  const sel = cardSel('proc-cards'), sort = segValue('p-sort') || 'total';
+  const all = S.procs, n = (f) => all.filter(f).length;
+  const unsigned = (p) => p.meta?.sig === 'notsigned' || p.meta?.sig === 'invalid';
+  renderCards('proc-cards', [
+    { key: 'all', label: 'all', n: all.length, sub: 'seen this session' },
+    { key: 'running', label: 'running', n: n((p) => p.alive), sub: 'still alive', color: C.s3 },
+    { key: 'online', label: 'online now', n: n((p) => p.conn_count > 0), sub: 'open connections', color: C.s1 },
+    { key: 'unsigned', label: 'unsigned', n: n(unsigned), sub: 'no valid signature', color: C.warning },
+    { key: 'location', label: 'odd location', n: n((p) => p.path_flags?.length), sub: 'temp, downloads, appdata…', color: C.serious },
+    { key: 'risky', label: 'risky', n: n((p) => p.risk >= 10), sub: 'risk score 10+', color: C.critical },
+    { key: 'alerts', label: 'with alerts', n: n((p) => (p.alert_count || 0) > 0), sub: 'raised at least one' },
+  ]);
+  let rows = all.filter((p) => (!sel.has('running') || p.alive) && (!sel.has('online') || p.conn_count > 0) && (!sel.has('unsigned') || unsigned(p)) && (!sel.has('location') || p.path_flags?.length) && (!sel.has('risky') || p.risk >= 10) && (!sel.has('alerts') || (p.alert_count || 0) > 0));
   if (q) rows = rows.filter((p) => [p.name, p.exe, String(p.pid), p.parent_name, p.user].some((v) => v && String(v).toLowerCase().includes(q)));
   const key = { total: (p) => p.bytes_in + p.bytes_out, risk: (p) => p.risk * 1e12 + p.bytes_out, rate: (p) => p.rate_in + p.rate_out, conns: (p) => p.conn_count };
   if (sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name)); else rows.sort((a, b) => key[sort](b) - key[sort](a));
@@ -588,30 +694,20 @@ function renderProcesses() {
   $$('#proc-table .kill').forEach((b) => b.addEventListener('click', () => killPid(+b.dataset.pid)));
   $$('#proc-table .block').forEach((b) => b.addEventListener('click', () => blockPid(+b.dataset.pid)));
 }
-['#p-sort', '#p-alive'].forEach((s) => $(s).addEventListener('change', renderProcesses));
+cardSel('proc-cards').add('running'); // default: running processes only, like before
+bindCards('proc-cards', renderProcesses); bindSeg('p-sort', renderProcesses);
 
 // ---------- alerts ----------
 // Severity filter: a set of selected severities; empty = all. Driven by the cards above the list.
-const sevFilter = new Set();
-let sevCardsHtml = '';
+const sevFilter = cardSel('sev-cards');
 function renderSevCards() {
   const total = Object.fromEntries(SEV_ORDER.map((s) => [s, 0])), open = Object.fromEntries(SEV_ORDER.map((s) => [s, 0]));
   let all = 0, allOpen = 0;
   for (const a of S.alerts) { all++; if (!a.acked) allOpen++; if (!(a.severity in total)) continue; total[a.severity]++; if (!a.acked) open[a.severity]++; }
-  const any = sevFilter.size > 0;
-  const card = (key, n, o, color) => {
-    const cls = key === 'all' ? (any ? '' : 'active') : (sevFilter.has(key) ? 'active' : any ? 'dim' : '');
-    return `<button class="sev-card ${cls}" data-sev="${key}" style="--card:${color}"><span class="sev-card-label">${key}</span><span class="sev-card-value">${n}</span><span class="sev-card-sub">${o ? `${o} open` : n ? 'all acknowledged' : 'none'}</span></button>`;
-  };
-  const html = card('all', all, allOpen, 'var(--text-2)') + SEV_ORDER.map((s) => card(s, total[s], open[s], SEV_COLOR[s])).join('');
-  if (html !== sevCardsHtml) { sevCardsHtml = html; $('#sev-cards').innerHTML = html; }
+  const sub = (n, o) => (o ? `${o} open` : n ? 'all acknowledged' : 'none');
+  renderCards('sev-cards', [{ key: 'all', label: 'all', n: all, sub: sub(all, allOpen) }, ...SEV_ORDER.map((s) => ({ key: s, label: s, n: total[s], sub: sub(total[s], open[s]), color: SEV_COLOR[s] }))]);
 }
-$('#sev-cards').addEventListener('click', (e) => {
-  const b = e.target.closest('.sev-card'); if (!b) return;
-  const k = b.dataset.sev;
-  if (k === 'all') sevFilter.clear(); else if (sevFilter.has(k)) sevFilter.delete(k); else sevFilter.add(k);
-  renderAlerts();
-});
+bindCards('sev-cards', renderAlerts);
 function clearAlertFilters() { sevFilter.clear(); $('#a-unacked').checked = false; setSearch(''); renderAlerts(); }
 function renderAlerts() {
   renderSevCards();
@@ -647,7 +743,15 @@ $('#ack-all').addEventListener('click', async () => { await post('/api/alerts/ac
 // ---------- dns ----------
 function renderDns() {
   const q = ($('#d-filter').value || $('#global-search').value).trim().toLowerCase();
-  let rows = S.dns;
+  const sel = cardSel('dns-cards'), all = S.dns, n = (f) => all.filter(f).length;
+  renderCards('dns-cards', [
+    { key: 'all', label: 'all', n: all.length, sub: 'queries captured' },
+    { key: 'a', group: 'type', label: 'A / AAAA', n: n((d) => d.qtype === 1 || d.qtype === 28), sub: 'name to address' },
+    { key: 'other', group: 'type', label: 'other types', n: n((d) => d.qtype !== 1 && d.qtype !== 28), sub: 'TXT, SRV, PTR…' },
+    { key: 'failed', label: 'failed', n: n((d) => d.status !== 0), sub: 'NXDOMAIN and errors', color: C.warning },
+    { key: 'flagged', label: 'flagged', n: n((d) => d.flags?.length), sub: 'intel, DGA, tunnelling', color: C.critical },
+  ]);
+  let rows = all.filter((d) => (!sel.has('a') || d.qtype === 1 || d.qtype === 28) && (!sel.has('other') || (d.qtype !== 1 && d.qtype !== 28)) && (!sel.has('failed') || d.status !== 0) && (!sel.has('flagged') || d.flags?.length));
   if (q) rows = rows.filter((d) => d.query.toLowerCase().includes(q) || (d.process || '').toLowerCase().includes(q));
   $('#dns-count').textContent = `${rows.length} queries`;
   $('#dns-table tbody').innerHTML = rows.slice(0, 400).map((d) => `<tr><td class="muted">${timeStr(d.ts)}</td><td>${esc(d.process || 'pid ' + d.pid)}</td><td class="mono" title="${esc(d.query)}">${d.flags?.includes('intel') ? '<span class="tag intel">intel</span>' : ''}${esc(d.query)}</td><td>${QTYPE[d.qtype] || d.qtype}</td><td class="${d.status ? 'muted' : ''}">${QSTATUS[d.status] || d.status}</td><td class="mono muted" title="${esc(d.results.join(', '))}">${esc(d.results.slice(0, 3).join(', '))}${d.results.length > 3 ? ' …' : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No DNS activity captured. Packet capture must be active.</td></tr>';
@@ -657,6 +761,7 @@ function renderDns() {
   charts.dns.data.labels = top.map(([k]) => k); charts.dns.data.datasets[0].data = top.map(([, v]) => v); charts.dns.update('none');
 }
 $('#d-filter').addEventListener('input', renderDns);
+bindCards('dns-cards', renderDns);
 
 // ---------- inventory ----------
 const invOpen = new Set();
@@ -680,8 +785,20 @@ async function loadInventory(silent) {
 }
 function renderInventory() {
   const inv = S.inventory; if (!inv) return;
-  const kind = $('#i-kind').value, flagged = $('#i-flagged').checked, q = $('#global-search').value.trim().toLowerCase();
-  let rows = inv.items.filter((i) => (!kind || i.kind === kind) && (!flagged || i.kev.length || i.cves.length));
+  const sel = cardSel('inv-cards'), q = $('#global-search').value.trim().toLowerCase();
+  const all = inv.items, n = (f) => all.filter(f).length;
+  const unpatched = (i) => i.kev.some((k) => k.likely_unpatched);
+  renderCards('inv-cards', [
+    { key: 'all', label: 'all', n: all.length, sub: 'apps, services, programs' },
+    { key: 'app', group: 'kind', label: 'apps', n: n((i) => i.kind === 'app'), sub: 'network-active', color: C.s1 },
+    { key: 'service', group: 'kind', label: 'services', n: n((i) => i.kind === 'service'), sub: 'Windows services' },
+    { key: 'program', group: 'kind', label: 'programs', n: n((i) => i.kind === 'program'), sub: 'installed software' },
+    { key: 'kev', label: 'exploited', n: n((i) => i.kev.length), sub: 'in CISA KEV', color: C.serious },
+    { key: 'unpatched', label: 'likely unpatched', n: n(unpatched), sub: 'binary older than the fix', color: C.critical },
+    { key: 'cve', label: 'with CVEs', n: n((i) => i.cves.length), sub: 'from the online lookup', color: C.warning },
+  ]);
+  const kindF = ['app', 'service', 'program'].find((k) => sel.has(k)) || '';
+  let rows = all.filter((i) => (!kindF || i.kind === kindF) && (!sel.has('kev') || i.kev.length) && (!sel.has('unpatched') || unpatched(i)) && (!sel.has('cve') || i.cves.length));
   if (q) rows = rows.filter((i) => [i.name, i.product, i.company, i.exe, i.version].some((v) => v && v.toLowerCase().includes(q)));
   $('#inv-count').textContent = `${rows.length} items`;
   $('#inv-table tbody').innerHTML = rows.slice(0, 800).map((i) => {
@@ -698,7 +815,7 @@ function renderInventory() {
   }).join('') || '<tr><td colspan="8" class="empty">Inventory not collected yet</td></tr>';
   $$('#inv-table .inv-row').forEach((tr) => tr.addEventListener('click', () => { const id = tr.dataset.id; invOpen.has(id) ? invOpen.delete(id) : invOpen.add(id); renderInventory(); }));
 }
-['#i-kind', '#i-flagged'].forEach((s) => $(s).addEventListener('change', renderInventory));
+bindCards('inv-cards', renderInventory);
 $('#inv-rescan').addEventListener('click', async () => { await post('/api/inventory/scan'); toast('Inventory scan started', 'results appear in a few seconds', 'sev-ok'); setTimeout(() => loadInventory(), 6000); });
 $('#inv-online').addEventListener('click', async () => {
   if (!confirm('This sends the product names and version numbers of your installed software to cvedb.shodan.io to look up published CVEs. Continue?')) return;
@@ -984,7 +1101,7 @@ function bindDrawerAlertButtons() {
 function closeDrawer() { $('#drawer').hidden = true; $('#drawer-backdrop').hidden = true; S.drawerPid = null; resetDrawerChat(); }
 $('#dr-close').addEventListener('click', closeDrawer);
 $('#drawer-backdrop').addEventListener('click', closeDrawer);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#drawer').hidden) closeDrawer(); else closeDestPop(); } });
 $('#dr-kill').addEventListener('click', () => killPid(S.drawerPid));
 $('#dr-block').addEventListener('click', () => blockPid(S.drawerPid));
 $('#dr-trust').addEventListener('click', async () => {
@@ -1043,6 +1160,8 @@ async function refreshView(force) {
   await initGlobe();
   await refreshView(true);
   setInterval(() => refreshView(false), 2500);
+  // Hooks for the headless smoke tests (tools/shot.mjs); same-origin only.
+  window.__nm = { S, showDestPop, closeDestPop, refreshView, setView, openDrawer };
   setInterval(async () => { if (!S.home || S.home.lat == null) { try { S.home = await api('/api/home'); } catch {} } }, 10000);
 })();
 })();

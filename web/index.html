@@ -114,10 +114,10 @@
 
     <!-- ===================== CONNECTIONS ===================== -->
     <section class="view" id="view-connections">
+      <div class="sev-cards" id="conn-cards" title="Click a card to filter; cards combine, click again to remove"></div>
       <div class="filter-row">
-        <label class="chk"><input type="checkbox" id="f-public" checked> Internet only</label>
-        <select id="f-proto"><option value="">TCP + UDP</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
-        <select id="f-sort"><option value="last_seen">Newest</option><option value="bytes_out">Most upload</option><option value="bytes_in">Most download</option><option value="risk">Highest risk</option><option value="first_seen">Longest open</option></select>
+        <span class="muted">Sort</span>
+        <div class="seg" id="f-sort"><button data-v="last_seen" class="active">Newest</button><button data-v="bytes_out">Most upload</button><button data-v="bytes_in">Most download</button><button data-v="risk">Highest risk</button><button data-v="first_seen">Longest open</button></div>
         <span class="count" id="conn-count"></span>
         <span class="spacer"></span>
         <a class="btn" href="/api/export/connections.csv">Export CSV</a>
@@ -131,9 +131,10 @@
 
     <!-- ===================== PROCESSES ===================== -->
     <section class="view" id="view-processes">
+      <div class="sev-cards" id="proc-cards" title="Click a card to filter; cards combine, click again to remove"></div>
       <div class="filter-row">
-        <select id="p-sort"><option value="total">Most traffic</option><option value="risk">Highest risk</option><option value="rate">Most active now</option><option value="conns">Most connections</option><option value="name">Name</option></select>
-        <label class="chk"><input type="checkbox" id="p-alive" checked> Running only</label>
+        <span class="muted">Sort</span>
+        <div class="seg" id="p-sort"><button data-v="total" class="active">Most traffic</button><button data-v="risk">Highest risk</button><button data-v="rate">Most active now</button><button data-v="conns">Most connections</button><button data-v="name">Name</button></div>
         <span class="count" id="proc-count"></span>
         <span class="spacer"></span>
         <a class="btn" href="/api/export/processes.json">Export JSON</a>
@@ -169,6 +170,7 @@
 
     <!-- ===================== DNS ===================== -->
     <section class="view" id="view-dns">
+      <div class="sev-cards" id="dns-cards" title="Click a card to filter; cards combine, click again to remove"></div>
       <div class="filter-row">
         <input id="d-filter" type="search" placeholder="filter by name or process">
         <span class="count" id="dns-count"></span>
@@ -188,9 +190,8 @@
 
     <!-- ===================== INVENTORY ===================== -->
     <section class="view" id="view-inventory">
+      <div class="sev-cards" id="inv-cards" title="Click a card to filter; cards combine, click again to remove"></div>
       <div class="filter-row">
-        <select id="i-kind"><option value="">Apps, services and programs</option><option value="app">Network-active apps</option><option value="service">Services</option><option value="program">Installed programs</option></select>
-        <label class="chk"><input type="checkbox" id="i-flagged"> Flagged only</label>
         <span class="count" id="inv-count"></span>
         <span class="spacer"></span>
         <span class="panel-sub" id="inv-progress"></span>

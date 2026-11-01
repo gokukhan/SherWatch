@@ -110,6 +110,22 @@ h1 { font-size: 18px; font-weight: 600; margin: 0; }
 .globe-layout > .panel { min-width: 0; min-height: 0; margin-top: 0; }
 .panel-globe-full { position: relative; padding: 0; overflow: hidden; }
 .panel-globe-full .globe-host { height: 100%; border-radius: var(--radius); }
+/* destination card: opens on click of a point, city or country */
+.globe-pop { position: absolute; top: 12px; right: 12px; width: 360px; max-width: calc(100% - 24px); max-height: calc(100% - 24px); overflow: auto; background: rgba(26,26,25,0.96); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 12px; z-index: 5; font-size: 12.5px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(6px); }
+.globe-pop-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.globe-pop-head b { font-size: 14px; word-break: break-all; }
+.globe-pop-head .icon-btn { width: 24px; height: 24px; flex: 0 0 auto; }
+.globe-pop-sub { color: var(--text-2); margin: 6px 0 4px; }
+.globe-pop-ips { font-size: 11px; word-break: break-all; margin-bottom: 4px; }
+.globe-pop h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin: 10px 0 4px; font-weight: 600; }
+.globe-pop-list { list-style: none; margin: 0; padding: 0; }
+.globe-pop-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 6px 4px; border-top: 1px solid var(--grid); cursor: pointer; border-radius: 6px; }
+.globe-pop-list li:hover { background: var(--surface-2); }
+.globe-pop-list li.muted, .globe-pop-list li.empty { cursor: default; }
+.globe-pop-list li.empty { padding: 10px 4px; }
+.globe-pop .small { font-size: 11px; }
+.globe-pop .num { text-align: right; white-space: nowrap; line-height: 1.35; }
+.globe-pop-foot { margin-top: 8px; display: flex; gap: 8px; }
 .globe-controls { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 14px; font-size: 12px; color: var(--text-2); background: rgba(13,13,13,0.7); padding: 6px 10px; border-radius: 8px; backdrop-filter: blur(6px); }
 .panel-destlist { display: flex; flex-direction: column; min-height: 0; }
 .panel-destlist .table-wrap { flex: 1; }

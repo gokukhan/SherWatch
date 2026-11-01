@@ -63,13 +63,21 @@ The command-center view.
 ## Globe
 
 The same globe at full size with a destination table beside it. Toggles for auto-rotate,
-arcs and labels sit at the bottom left. Drag to rotate, scroll to zoom. The table lists
+arcs and labels sit at the bottom left. Drag to rotate, scroll to zoom. Hovering a point or
+label shows a short tooltip; **clicking** a point, a city label or a country name opens the
+destination card in the corner of the globe: the address or place, its network owner and any
+threat-feed match, the open connections and bytes, and every process sending there. Click a
+process to open its drawer, ✦ to ask the assistant about that connection, or **All
+connections** to jump to the Connections view filtered to that address or place. The card
+stays open (rotation pauses) until you close it, press Escape or click the globe. The table lists
 every public host with location, processes, bytes and risk; click a row to see its
 connections.
 
 ## Connections
 
-Every live flow. Filters: internet only (default on), protocol, sort order. Columns:
+Every live flow. The cards across the top count connections by scope (internet, local),
+protocol, threat-intel matches and risky processes; click a card to filter (internet is
+selected by default), combine cards, click again to remove. Sort buttons sit below. Columns:
 process, PID, protocol, remote IP (with an **intel** tag when listed by a feed), hostname
 (from the DNS capture or reverse DNS), port, location, TCP state, bytes out and in, age and
 the risk meter. Click a row for the process drawer; the **block IP** button adds a Windows
@@ -77,7 +85,10 @@ Firewall rule for that address in both directions. **Export CSV** downloads the 
 
 ## Processes
 
-Every process that has used the network since the app started. Columns: name and
+Every process that has used the network since the app started. Cards count the processes
+that are running (selected by default), online now, unsigned, in an odd location, risky or
+carrying alerts; click to filter, combine, click again to remove. Sort buttons sit below.
+Columns: name and
 executable path, PID, signature status (signed with publisher on hover, unsigned,
 invalid, or checking), location flags (temp, downloads, appdata, store-app...), a 60-second
 activity sparkline (blue upload, green download), bytes, connection count, DNS query count,
@@ -114,7 +125,8 @@ Critical and high alerts also pop up as toasts in the bottom-right corner on eve
 ## DNS
 
 Live DNS queries captured from the Windows DNS client, per process, with type, status,
-and answers, plus a chart of the most queried domains. Needs packet capture. Queries for
+and answers, plus a chart of the most queried domains. Cards filter by query type, failed
+lookups and flagged names. Needs packet capture. Queries for
 domains in a threat feed carry an **intel** tag and raise a critical alert.
 
 ## Inventory
