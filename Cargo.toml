@@ -1,0 +1,38 @@
+[package]
+name = "netmon"
+version = "0.1.0"
+edition = "2021"
+description = "NetMonitor Command Center - per-process network monitoring and threat analysis for Windows"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.41", features = ["bundled"] }
+ferrisetw = "1.2"
+maxminddb = "0.32"
+rust-embed = "8"
+mime_guess = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "json"] }
+flate2 = "1"
+dashmap = "6"
+sha2 = "0.10"
+hex = "0.4"
+parking_lot = "0.12"
+chrono = { version = "0.4", features = ["serde"] }
+ipnet = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+toml = "0.8"
+netstat2 = "0.11"
+sysinfo = "0.36"
+dns-lookup = "2"
+futures = "0.3"
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Shell"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

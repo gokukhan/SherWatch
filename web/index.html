@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetMonitor Command Center</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%230d0d0d' stroke='%233987e5' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%233987e5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <aside id="nav">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <div class="brand-name">NetMonitor</div>
+        <div class="brand-sub">Command Center</div>
+      </div>
+    </div>
+    <nav>
+      <button class="nav-btn active" data-view="overview"><span class="ico">◉</span>Overview</button>
+      <button class="nav-btn" data-view="globe"><span class="ico">◍</span>Globe</button>
+      <button class="nav-btn" data-view="connections"><span class="ico">⇄</span>Connections</button>
+      <button class="nav-btn" data-view="processes"><span class="ico">▣</span>Processes</button>
+      <button class="nav-btn" data-view="alerts"><span class="ico">▲</span>Alerts <span class="badge" id="nav-alert-badge" hidden>0</span></button>
+      <button class="nav-btn" data-view="dns"><span class="ico">◇</span>DNS</button>
+      <button class="nav-btn" data-view="history"><span class="ico">≋</span>History</button>
+      <button class="nav-btn" data-view="settings"><span class="ico">⚙</span>Settings</button>
+    </nav>
+    <div class="nav-foot">
+      <div class="status-row"><span class="dot" id="st-ws"></span>Live feed</div>
+      <div class="status-row"><span class="dot" id="st-etw"></span>Packet capture</div>
+      <div class="status-row"><span class="dot" id="st-admin"></span>Administrator</div>
+      <div class="status-row"><span class="dot" id="st-intel"></span>Threat intel</div>
+      <div class="version" id="version"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <div class="topbar-left">
+        <h1 id="view-title">Overview</h1>
+        <span class="clock" id="clock"></span>
+      </div>
+      <div class="topbar-right">
+        <div class="pill" id="pill-update" hidden title="New threat data needs a code change. Ask Claude to update the app.">⟳ App update needed</div>
+        <div class="pill pill-critical" id="pill-critical" hidden></div>
+        <div class="pill pill-high" id="pill-high" hidden></div>
+        <input id="global-search" type="search" placeholder="Search process, host, IP…">
+      </div>
+    </header>
+
+    <!-- ===================== OVERVIEW ===================== -->
+    <section class="view active" id="view-overview">
+      <div class="tiles">
+        <div class="tile"><div class="tile-label">Upload</div><div class="tile-value" id="t-out">0 B/s</div><canvas class="spark" id="spark-out" width="120" height="28"></canvas></div>
+        <div class="tile"><div class="tile-label">Download</div><div class="tile-value" id="t-in">0 B/s</div><canvas class="spark" id="spark-in" width="120" height="28"></canvas></div>
+        <div class="tile"><div class="tile-label">Connections</div><div class="tile-value" id="t-conns">0</div><div class="tile-sub" id="t-conns-sub">0 to the internet</div></div>
+        <div class="tile"><div class="tile-label">Processes online</div><div class="tile-value" id="t-procs">0</div><div class="tile-sub" id="t-listeners">0 listening ports</div></div>
+        <div class="tile"><div class="tile-label">Open alerts</div><div class="tile-value" id="t-alerts">0</div><div class="tile-sub" id="t-alerts-sub"></div></div>
+        <div class="tile"><div class="tile-label">Session total</div><div class="tile-value" id="t-total">0 B</div><div class="tile-sub" id="t-total-sub"></div></div>
+      </div>
+
+      <div class="grid-overview">
+        <div class="panel panel-globe">
+          <div class="panel-head"><h2>Live destinations</h2><span class="panel-sub" id="globe-sub">arcs show active traffic from this PC</span></div>
+          <div id="globe-host-overview" class="globe-host"></div>
+        </div>
+        <div class="panel panel-alerts">
+          <div class="panel-head"><h2>Latest alerts</h2><button class="link" data-goto="alerts">all</button></div>
+          <ul class="alert-feed" id="ov-alerts"></ul>
+        </div>
+        <div class="panel panel-top">
+          <div class="panel-head"><h2>Top talkers</h2><span class="panel-sub">bytes this session</span></div>
+          <div class="chart-box"><canvas id="chart-top"></canvas></div>
+        </div>
+        <div class="panel panel-throughput">
+          <div class="panel-head"><h2>Throughput, last 5 minutes</h2>
+            <div class="legend"><span><i class="sw" style="background:var(--series-1)"></i>Upload</span><span><i class="sw" style="background:var(--series-3)"></i>Download</span></div>
+          </div>
+          <div class="chart-box"><canvas id="chart-throughput"></canvas></div>
+        </div>
+        <div class="panel panel-countries">
+          <div class="panel-head"><h2>Destinations by country</h2><span class="panel-sub">active connections</span></div>
+          <div class="chart-box"><canvas id="chart-countries"></canvas></div>
+        </div>
+        <div class="panel panel-ticker">
+          <div class="panel-head"><h2>Connection stream</h2><span class="panel-sub">newest first</span></div>
+          <div class="ticker" id="ticker"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== GLOBE ===================== -->
+    <section class="view" id="view-globe">
+      <div class="globe-layout">
+        <div class="panel panel-globe-full">
+          <div id="globe-host-full" class="globe-host"></div>
+          <div class="globe-controls">
+            <label><input type="checkbox" id="globe-rotate" checked> auto-rotate</label>
+            <label><input type="checkbox" id="globe-arcs" checked> arcs</label>
+            <label><input type="checkbox" id="globe-labels" checked> labels</label>
+            <span id="globe-home"></span>
+          </div>
+        </div>
+        <div class="panel panel-destlist">
+          <div class="panel-head"><h2>Destinations</h2><span class="panel-sub" id="dest-count"></span></div>
+          <div class="table-wrap"><table class="tbl" id="dest-table"><thead><tr><th>Host / IP</th><th>Where</th><th>Process</th><th class="num">Out</th><th class="num">In</th><th>Risk</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== CONNECTIONS ===================== -->
+    <section class="view" id="view-connections">
+      <div class="filter-row">
+        <label class="chk"><input type="checkbox" id="f-public" checked> Internet only</label>
+        <select id="f-proto"><option value="">TCP + UDP</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
+        <select id="f-sort"><option value="last_seen">Newest</option><option value="bytes_out">Most upload</option><option value="bytes_in">Most download</option><option value="risk">Highest risk</option><option value="first_seen">Longest open</option></select>
+        <span class="count" id="conn-count"></span>
+        <span class="spacer"></span>
+        <a class="btn" href="/api/export/connections.csv">Export CSV</a>
+      </div>
+      <div class="panel">
+        <div class="table-wrap tall"><table class="tbl" id="conn-table"><thead><tr>
+          <th>Process</th><th>PID</th><th>Proto</th><th>Remote</th><th>Hostname</th><th>Port</th><th>Location</th><th>State</th><th class="num">Out</th><th class="num">In</th><th>Age</th><th>Risk</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ===================== PROCESSES ===================== -->
+    <section class="view" id="view-processes">
+      <div class="filter-row">
+        <select id="p-sort"><option value="total">Most traffic</option><option value="risk">Highest risk</option><option value="rate">Most active now</option><option value="conns">Most connections</option><option value="name">Name</option></select>
+        <label class="chk"><input type="checkbox" id="p-alive" checked> Running only</label>
+        <span class="count" id="proc-count"></span>
+        <span class="spacer"></span>
+        <a class="btn" href="/api/export/processes.json">Export JSON</a>
+      </div>
+      <div class="panel">
+        <div class="table-wrap tall"><table class="tbl" id="proc-table"><thead><tr>
+          <th>Process</th><th>PID</th><th>Signature</th><th>Location</th><th>Activity</th><th class="num">Out</th><th class="num">In</th><th class="num">Conns</th><th class="num">DNS</th><th>Risk</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ===================== ALERTS ===================== -->
+    <section class="view" id="view-alerts">
+      <div class="filter-row">
+        <select id="a-sev"><option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="info">Info</option></select>
+        <label class="chk"><input type="checkbox" id="a-unacked"> Unacknowledged only</label>
+        <span class="count" id="alert-count"></span>
+        <span class="spacer"></span>
+        <button class="btn" id="ack-all">Acknowledge all</button>
+        <a class="btn" href="/api/export/alerts.csv">Export CSV</a>
+        <a class="btn" href="/api/export/alerts.json">Export JSON</a>
+      </div>
+      <div class="panel small-chart">
+        <div class="panel-head"><h2>Alerts over the last 24 hours</h2>
+          <div class="legend" id="alert-legend"></div>
+        </div>
+        <div class="chart-box short"><canvas id="chart-alerts"></canvas></div>
+      </div>
+      <div class="panel">
+        <ul class="alert-list" id="alert-list"></ul>
+      </div>
+    </section>
+
+    <!-- ===================== DNS ===================== -->
+    <section class="view" id="view-dns">
+      <div class="filter-row">
+        <input id="d-filter" type="search" placeholder="filter by name or process">
+        <span class="count" id="dns-count"></span>
+        <span class="spacer"></span>
+        <a class="btn" href="/api/export/dns.csv">Export CSV</a>
+      </div>
+      <div class="grid-dns">
+        <div class="panel">
+          <div class="panel-head"><h2>Most queried domains</h2><span class="panel-sub">recent queries</span></div>
+          <div class="chart-box"><canvas id="chart-dns"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="table-wrap tall"><table class="tbl" id="dns-table"><thead><tr><th>Time</th><th>Process</th><th>Query</th><th>Type</th><th>Status</th><th>Answers</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== HISTORY ===================== -->
+    <section class="view" id="view-history">
+      <div class="filter-row">
+        <div class="seg" id="h-range">
+          <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24" class="active">24 h</button><button data-h="168">7 d</button><button data-h="720">30 d</button>
+        </div>
+        <span class="spacer"></span>
+        <span class="panel-sub">stored locally in data/netmon.db</span>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Traffic by application</h2><div class="legend" id="hist-legend"></div></div>
+        <div class="chart-box"><canvas id="chart-history"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Alerts</h2><div class="legend" id="hist-alert-legend"></div></div>
+        <div class="chart-box short"><canvas id="chart-history-alerts"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Closed connections</h2><span class="panel-sub" id="hist-conn-count"></span></div>
+        <div class="table-wrap tall"><table class="tbl" id="hist-conn-table"><thead><tr><th>Started</th><th>Duration</th><th>Process</th><th>Remote</th><th>Hostname</th><th>Country</th><th class="num">Out</th><th class="num">In</th><th>Flags</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ===================== SETTINGS ===================== -->
+    <section class="view" id="view-settings">
+      <div class="grid-settings">
+        <div class="panel" id="update-panel" hidden>
+          <div class="panel-head"><h2>App update needed</h2></div>
+          <p class="muted">The threat-data sources changed in a way this build cannot handle on its own. Ask Claude to update the app and mention the items below.</p>
+          <ul id="update-reasons" class="plain"></ul>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Threat intelligence feeds</h2><button class="btn" id="intel-refresh">Refresh now</button></div>
+          <div class="kv" id="intel-summary"></div>
+          <div class="table-wrap"><table class="tbl" id="feed-table"><thead><tr><th>Feed</th><th>Kind</th><th>Source</th><th class="num">Entries</th><th>Updated</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Firewall blocks</h2></div>
+          <p class="muted">Rules created by NetMonitor in Windows Defender Firewall.</p>
+          <div class="table-wrap"><table class="tbl" id="block-table"><thead><tr><th>Kind</th><th>Target</th><th>Created</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div class="row-gap">
+            <input id="block-ip-input" placeholder="block an IP address">
+            <button class="btn" id="block-ip-btn">Block IP</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Capture status</h2></div>
+          <div class="kv" id="capture-status"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Configuration</h2><span class="panel-sub">edit config.toml and restart</span></div>
+          <pre id="config-dump" class="code"></pre>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Hosts file</h2></div>
+          <ul id="hosts-issues" class="plain muted"></ul>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>About</h2></div>
+          <p class="muted">NetMonitor Command Center. Everything runs locally. Data sources: abuse.ch Feodo Tracker and SSL Blacklist, Spamhaus DROP, IPsum, Tor exit list, Blackbook, OpenPhish. GeoIP by <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a> (CC BY 4.0). Globe by globe.gl / three.js, charts by Chart.js, map data from world-atlas (Natural Earth).</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- process drawer -->
+  <div id="drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <div>
+        <div class="drawer-title" id="dr-title">process</div>
+        <div class="drawer-sub mono" id="dr-exe"></div>
+      </div>
+      <button class="icon-btn" id="dr-close">✕</button>
+    </div>
+    <div class="drawer-actions">
+      <button class="btn danger" id="dr-kill">Terminate process</button>
+      <button class="btn warn" id="dr-block">Block in firewall</button>
+    </div>
+    <div class="drawer-body" id="dr-body"></div>
+  </div>
+  <div id="drawer-backdrop" hidden></div>
+
+  <div id="toasts"></div>
+</div>
+
+<script src="vendor/chart.umd.js"></script>
+<script src="vendor/globe.gl.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script src="vendor/d3.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

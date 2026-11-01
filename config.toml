@@ -1,0 +1,84 @@
+# NetMonitor Command Center configuration
+# Edit and restart the app to apply.
+
+[server]
+bind = "127.0.0.1"
+port = 8787
+open_browser = true
+
+[analysis]
+# Minutes to wait before the same alert (same rule + process + target) can fire again
+alert_cooldown_minutes = 10
+# Outbound bytes per process within 60 seconds that triggers an exfiltration alert
+exfil_bytes_per_minute = 26214400     # 25 MB
+# Outbound bytes per process within 5 minutes that triggers a high exfiltration alert
+exfil_bytes_per_5min = 209715200      # 200 MB
+# Distinct public destinations per process within 60 seconds (scan / spray detection)
+many_destinations_threshold = 100
+# Beacon detection: minimum number of regular intervals and max coefficient of variation
+beacon_min_intervals = 6
+beacon_max_cv = 0.25
+# Country codes (ISO 3166-1 alpha-2) on your watch list. Connections to these raise a low alert.
+watch_countries = ["KP", "IR", "RU", "CN", "SY", "BY"]
+# Reverse-DNS lookups for IPs without a captured DNS query (uses your normal resolver)
+reverse_dns = true
+
+[intel]
+# Hours between feed refreshes
+refresh_hours = 6
+# Minimum IPsum score (number of blocklists that list the IP) to treat as malicious
+ipsum_min_score = 3
+
+[[intel.feeds]]
+name = "Feodo Tracker C2"
+url = "https://feodotracker.abuse.ch/downloads/ipblocklist.csv"
+kind = "csv_ip"
+column = "dst_ip"
+file = "feodo.csv"
+
+[[intel.feeds]]
+name = "abuse.ch SSL Blacklist"
+url = "https://sslbl.abuse.ch/blacklist/sslipblacklist.csv"
+kind = "csv_ip"
+column = "DstIP"
+file = "sslbl.csv"
+
+[[intel.feeds]]
+name = "Spamhaus DROP"
+url = "https://www.spamhaus.org/drop/drop.txt"
+kind = "cidr_lines"
+file = "spamhaus_drop.txt"
+
+[[intel.feeds]]
+name = "IPsum aggregate"
+url = "https://raw.githubusercontent.com/stamparm/ipsum/master/ipsum.txt"
+kind = "ipsum"
+file = "ipsum.txt"
+
+[[intel.feeds]]
+name = "Tor exit nodes"
+url = "https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-exit-nodes.lst"
+kind = "ip_lines"
+file = "tor_exits.txt"
+
+[[intel.feeds]]
+name = "Blackbook malicious domains"
+url = "https://raw.githubusercontent.com/stamparm/blackbook/master/blackbook.txt"
+kind = "domain_lines"
+file = "blackbook.txt"
+
+[[intel.feeds]]
+name = "OpenPhish"
+url = "https://openphish.com/feed.txt"
+kind = "url_lines"
+file = "openphish.txt"
+
+[virustotal]
+# Optional. Add a VirusTotal API key to look up SHA-256 hashes of unsigned executables.
+# Off while empty. Only hashes are sent, never files.
+api_key = ""
+
+[geo]
+# DB-IP Lite city database (CC BY 4.0, https://db-ip.com). Downloaded automatically when missing.
+mmdb = "data/geo/dbip-city-lite.mmdb"
+download_url = "https://download.db-ip.com/free/dbip-city-lite-{YYYY}-{MM}.mmdb.gz"

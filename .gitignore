@@ -1,0 +1,6 @@
+/target/
+/tmp/
+/data/
+/tools/npm/node_modules/
+/tools/rustup/
+*.log
