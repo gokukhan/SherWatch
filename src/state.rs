@@ -580,7 +580,9 @@ impl AppState {
         self.listeners.retain(|k, _| seen_listeners.contains(k));
         // Processes with no connections for an hour (10 minutes once exited) are dropped from memory.
         let active: std::collections::HashSet<u32> = self.conns.iter().map(|c| c.pid).collect();
-        self.procs.retain(|pid, p| active.contains(pid) || now - p.last_seen < if p.alive { 3_600_000 } else { 600_000 });
+        // Live records stay an hour after their last activity; exited ones 10 minutes, or an hour when they
+        // raised alerts so the drawer behind those alerts keeps its details.
+        self.procs.retain(|pid, p| active.contains(pid) || now - p.last_seen < if p.alive || p.alert_count > 0 { 3_600_000 } else { 600_000 });
         self.beacons.retain(|(pid, _), v| self.procs.contains_key(pid) && v.back().map(|t| now - t < 4 * 3600_000).unwrap_or(false));
         self.dst_window.retain(|pid, w| {
             while w.front().map(|(t, _)| now - t > 60_000).unwrap_or(false) {

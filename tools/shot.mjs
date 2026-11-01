@@ -29,7 +29,7 @@ try {
   await sleep(+waitMs);
   if (view) { await send('Runtime.evaluate', { expression: `document.querySelector('.nav-btn[data-view="${view}"]').click()` }); await sleep(3500); }
   if (evalExpr) {
-    const r = await Promise.race([send('Runtime.evaluate', { expression: evalExpr, returnByValue: true, awaitPromise: true }), sleep(8000).then(() => null)]);
+    const r = await Promise.race([send('Runtime.evaluate', { expression: evalExpr, returnByValue: true, awaitPromise: true }), sleep(45000).then(() => null)]);
     console.log('eval', r ? JSON.stringify(r.result?.result?.value ?? r.result?.exceptionDetails?.text) : 'TIMEOUT (page unresponsive)');
   }
   const shot = await send('Page.captureScreenshot', { format: 'png' });

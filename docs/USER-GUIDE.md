@@ -89,7 +89,8 @@ Opens from any table or alert. Shows the risk score, parent process, user, start
 full command line, signer, SHA-256 (with a VirusTotal link you can open yourself),
 location flags, traffic, listening sockets, the process's alerts with acknowledge buttons,
 its connections, its DNS queries and any repeated contacts (candidates for beaconing).
-**Terminate process** runs taskkill on the process tree. **Block in firewall** adds inbound
+**✦ Explain** asks the assistant about the process and shows the answer in the drawer
+itself, with a follow-up box. **Terminate process** runs taskkill on the process tree. **Block in firewall** adds inbound
 and outbound block rules for the executable. **Trust this program** marks the exact file
 (by SHA-256) as known-good: the unsigned-program, suspicious-location, hard-coded-IP and
 new-listener rules stop firing for it, while threat-intel, beaconing, exfiltration and port
@@ -147,11 +148,17 @@ Processes named svchost.exe show the Windows services they host (for example
 
 A built-in analyst that answers the questions you would otherwise ask a security person:
 "what is this process?", "why was this flagged?", "is this connection safe?", "summarise my
-network". Every ✦ button (process drawer, process rows, connection rows, alerts) opens the
-Assistant with the facts about that item already attached: path, signature, publisher and
-version, parent, hosted services, connections with hostnames and network owners, DNS,
-alerts with rule meanings, vulnerability matches. The answer ends with a verdict and a
-recommended action.
+network". Every ✦ button (process drawer, process rows, connection rows, alerts) asks with
+the facts about that item already attached: path, signature, publisher and version, parent,
+hosted services, connections with hostnames and network owners, DNS, alerts with rule
+meanings, vulnerability matches. The answer ends with a verdict and a recommended action.
+
+A ✦ on anything that belongs to a process answers inside that process's drawer on the right,
+so you stay on the view you were reading. The answer appears in an **Assistant** panel at the
+top of the drawer with a box for follow-up questions about that process; ✕ closes the
+panel, and the conversation is dropped when the drawer closes. Alerts without a process
+(hosts file, Windows updates, the app-update notice) and the Assistant view's own chat box
+use the full Assistant view.
 
 The dropdown picks which model answers:
 

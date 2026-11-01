@@ -30,10 +30,10 @@
       <button class="nav-btn" data-view="settings"><span class="ico">⚙</span>Settings</button>
     </nav>
     <div class="nav-foot">
-      <div class="status-row"><span class="dot" id="st-ws"></span>Live feed</div>
-      <div class="status-row"><span class="dot" id="st-etw"></span>Packet capture</div>
-      <div class="status-row"><span class="dot" id="st-admin"></span>Administrator</div>
-      <div class="status-row"><span class="dot" id="st-intel"></span>Threat intel</div>
+      <div class="status-row" title="Green: the page receives live updates from the app. Red: the app is stopped or restarting; the page reconnects by itself."><span class="dot" id="st-ws"></span>Live feed</div>
+      <div class="status-row" title="Green: per-process byte counts and DNS are being captured (needs administrator). Red: only the connection table is available."><span class="dot" id="st-etw"></span>Packet capture</div>
+      <div class="status-row" title="Green: the app runs elevated. Red: started without administrator rights; launch run.cmd and accept the prompt for full visibility."><span class="dot" id="st-admin"></span>Administrator</div>
+      <div class="status-row" title="Green: threat-intelligence feeds are loaded. Yellow: no feed data yet."><span class="dot" id="st-intel"></span>Threat intel</div>
       <div class="version" id="version"></div>
     </div>
   </aside>
@@ -323,6 +323,11 @@
       <button class="btn warn" id="dr-block">Block in firewall</button>
       <button class="btn" id="dr-trust" title="Mark this exact file (by SHA-256) as known-good. Stops the unsigned and suspicious-location alerts for it; a changed file alerts again.">Trust this program</button>
       <button class="btn ai" id="dr-explain" title="Ask the assistant what this process is and whether it is safe">✦ Explain</button>
+    </div>
+    <div class="drawer-ai" id="dr-ai" hidden>
+      <div class="drawer-ai-head"><span>✦ Assistant</span><button class="icon-btn" id="dr-ai-close" title="Close the explanation">✕</button></div>
+      <div class="drawer-ai-log" id="dr-ai-log"></div>
+      <form class="chat-form" id="dr-ai-form"><input id="dr-ai-input" placeholder="Ask a follow-up about this process…" autocomplete="off"><button class="btn ai" id="dr-ai-send" type="submit">Ask</button></form>
     </div>
     <div class="drawer-body" id="dr-body"></div>
   </div>

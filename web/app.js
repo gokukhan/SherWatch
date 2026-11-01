@@ -554,7 +554,7 @@ function renderConnections() {
     <td class="muted">${esc(c.state)}</td><td class="num">${fmtBytes(c.bytes_out)}</td><td class="num">${fmtBytes(c.bytes_in)}</td>
     <td class="muted">${fmtAge(now - c.first_seen)}</td><td>${meter(c.risk)}</td>
     <td><button class="btn sm ai explain-conn" data-pid="${c.pid}" data-remote="${esc(c.remote_addr)}:${c.remote_port}" title="Ask the assistant">✦</button> <button class="btn sm block-ip" data-ip="${esc(c.remote_addr)}" title="Block this IP in Windows Firewall">block IP</button></td></tr>`).join('') || '<tr><td colspan="13" class="empty">No connections match</td></tr>';
-  $$('#conn-table .explain-conn').forEach((b) => b.addEventListener('click', () => askAi({ kind: 'connection', pid: +b.dataset.pid, remote: b.dataset.remote, label: `${procName(+b.dataset.pid)} → ${b.dataset.remote}` })));
+  $$('#conn-table .explain-conn').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(+b.dataset.pid); askAi({ kind: 'connection', pid: +b.dataset.pid, remote: b.dataset.remote, label: `${procName(+b.dataset.pid)} → ${b.dataset.remote}`, target: 'drawer' }); }));
   $$('#conn-table tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) openDrawer(+tr.dataset.pid); }));
   $$('#conn-table .block-ip').forEach((b) => b.addEventListener('click', () => blockIp(b.dataset.ip)));
 }
@@ -581,7 +581,7 @@ function renderProcesses() {
     <td class="num">${fmtBytes(p.bytes_out)}</td><td class="num">${fmtBytes(p.bytes_in)}</td><td class="num">${p.conn_count}</td><td class="num">${p.dns_count}</td>
     <td>${meter(p.risk)}</td>
     <td><button class="btn sm ai explain" data-pid="${p.pid}" title="Ask the assistant">✦</button> <button class="btn sm kill" data-pid="${p.pid}">kill</button> <button class="btn sm block" data-pid="${p.pid}">block</button></td></tr>`).join('') || '<tr><td colspan="11" class="empty">No processes</td></tr>';
-  $$('#proc-table .explain').forEach((b) => b.addEventListener('click', () => { const p = S.procs.find((x) => x.pid === +b.dataset.pid); askAi({ kind: 'process', pid: +b.dataset.pid, label: p ? `${p.name} (${p.pid})` : '' }); }));
+  $$('#proc-table .explain').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); const p = S.procs.find((x) => x.pid === +b.dataset.pid); openDrawer(+b.dataset.pid); askAi({ kind: 'process', pid: +b.dataset.pid, label: p ? `${p.name} (${p.pid})` : '', target: 'drawer' }); }));
   const byPid = new Map(rows.map((p) => [p.pid, p]));
   $$('#proc-table .pspark').forEach((cv) => drawProcSpark(cv, byPid.get(+cv.dataset.pid)?.series));
   $$('#proc-table tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) openDrawer(+tr.dataset.pid); }));
@@ -628,8 +628,8 @@ function renderAlerts() {
     const li = e.target.closest('li'); const id = +li.dataset.id;
     await post(`/api/alerts/${id}/ack`); const a = S.alerts.find((x) => x.id === id); if (a) a.acked = true; renderAlerts(); renderOverviewAlerts(); updateSeverityPills();
   }));
-  $$('#alert-list li').forEach((li) => li.addEventListener('click', (e) => { if (!e.target.closest('button') && +li.dataset.pid) openDrawer(+li.dataset.pid); }));
-  $$('#alert-list .explain-btn').forEach((b) => b.addEventListener('click', (e) => { const li = e.target.closest('li'); const a = S.alerts.find((x) => x.id === +li.dataset.id); askAi({ kind: 'alert', id: +li.dataset.id, label: a ? a.title : '#' + li.dataset.id }); }));
+  $$('#alert-list li').forEach((li) => li.addEventListener('click', (e) => { if (!e.target.closest('button') && +li.dataset.pid) { const a = S.alerts.find((x) => x.id === +li.dataset.id); openDrawer(+li.dataset.pid, alertHint(a)); } }));
+  $$('#alert-list .explain-btn').forEach((b) => b.addEventListener('click', (e) => { explainAlert(+e.target.closest('li').dataset.id); }));
   // 24h histogram
   const now = Date.now(), start = now - 24 * 3600e3, buckets = 24;
   const labels = [], data = Object.fromEntries(SEV_ORDER.map((s) => [s, new Array(buckets).fill(0)]));
@@ -708,8 +708,10 @@ $('#inv-online').addEventListener('click', async () => {
 
 // ---------- assistant ----------
 const chat = { history: [], busy: false };
-function chatAdd(role, text, meta, cls = '') {
-  const log = $('#chat-log');
+// Explanations asked from the process drawer stay in the drawer: their own log and history.
+const drawerChat = { history: [], busy: false, pid: null };
+function resetDrawerChat() { drawerChat.history = []; drawerChat.pid = null; $('#dr-ai').hidden = true; $('#dr-ai-log').innerHTML = ''; $('#dr-ai-input').value = ''; }
+function chatAdd(role, text, meta, cls = '', log = $('#chat-log')) {
   if (log.querySelector('.empty')) log.innerHTML = '';
   const el = document.createElement('div');
   el.className = `msg ${role} ${cls}`;
@@ -734,31 +736,52 @@ async function aiStatus() {
 }
 $('#ai-provider').addEventListener('change', () => { localStorage.setItem('nm-ai-choice', $('#ai-provider').value); aiStatus(); });
 try { const saved = localStorage.getItem('nm-ai-choice'); if (saved) { $('#ai-provider').innerHTML += `<option value="${saved}">${saved}</option>`; $('#ai-provider').value = saved; } } catch {}
-async function askAi({ kind = 'none', pid, id, remote, question = '', label = '' }) {
-  if (chat.busy) return;
-  setView('assistant');
+// target 'drawer' answers inside the open process drawer (no view change); anything else uses the Assistant view.
+async function askAi({ kind = 'none', pid, id, remote, question = '', label = '', target = 'assistant' }) {
+  const inDrawer = target === 'drawer' && !$('#drawer').hidden;
+  const box = inDrawer ? drawerChat : chat;
+  if (box.busy) return;
+  let log, sendBtn;
+  if (inDrawer) { $('#dr-ai').hidden = false; log = $('#dr-ai-log'); sendBtn = $('#dr-ai-send'); drawerChat.pid = S.drawerPid; }
+  else { setView('assistant'); log = $('#chat-log'); sendBtn = $('#chat-send'); }
   const shown = question || ({ process: `Explain ${label || 'this process'}`, alert: `Explain alert: ${label}`, connection: `Explain connection ${label}`, overview: 'Summarise my network' }[kind] || question);
-  chatAdd('user', shown);
-  const pending = chatAdd('ai', 'Thinking…', '', 'thinking');
-  chat.busy = true; $('#chat-send').disabled = true;
+  chatAdd('user', shown, '', '', log);
+  const pending = chatAdd('ai', 'Thinking…', '', 'thinking', log);
+  box.busy = true; sendBtn.disabled = true;
   try {
     const sel = aiSel();
-    const body = { kind, pid, id, remote, question, history: chat.history.slice(-8), provider: sel.provider, model: sel.model };
+    const body = { kind, pid, id, remote, question, history: box.history.slice(-8), provider: sel.provider, model: sel.model };
     const r = await post('/api/ai/ask', body);
     pending.remove();
     if (r.ok) {
-      chatAdd('ai', r.answer, `${r.provider} · ${r.model}${r.local ? ' · nothing left this PC' : ' · sent to the model service'}`);
-      chat.history.push({ role: 'user', content: shown }, { role: 'assistant', content: r.answer });
+      chatAdd('ai', r.answer, `${r.provider} · ${r.model}${r.local ? ' · nothing left this PC' : ' · sent to the model service'}`, '', log);
+      box.history.push({ role: 'user', content: shown }, { role: 'assistant', content: r.answer });
     } else {
-      chatAdd('ai', r.error || 'No answer', '', 'err');
+      chatAdd('ai', r.error || 'No answer', '', 'err', log);
     }
-  } catch (e) { pending.remove(); chatAdd('ai', 'Request failed: ' + e.message, '', 'err'); }
-  finally { chat.busy = false; $('#chat-send').disabled = false; }
+  } catch (e) { pending.remove(); chatAdd('ai', 'Request failed: ' + e.message, '', 'err', log); }
+  finally { box.busy = false; sendBtn.disabled = false; }
+}
+$('#dr-ai-form').addEventListener('submit', (e) => { e.preventDefault(); const q = $('#dr-ai-input').value.trim(); if (!q) return; $('#dr-ai-input').value = ''; askAi({ kind: 'process', pid: S.drawerPid, question: q, target: 'drawer' }); });
+$('#dr-ai-close').addEventListener('click', resetDrawerChat);
+// What an alert knows about its process, for the drawer header when there is no live record.
+// Inventory alerts carry the service executable in `remote` as "svc:<path>".
+function alertHint(a) {
+  if (!a) return null;
+  const exe = a.exe || (a.remote && a.remote.startsWith('svc:') ? a.remote.slice(4) : '');
+  return { name: a.process || (exe ? exe.split(/[\\/]/).pop() : ''), exe };
+}
+// Explain an alert: inside the drawer of its process when it has one, otherwise in the Assistant view.
+function explainAlert(id) {
+  const a = S.alerts.find((x) => x.id === id);
+  const label = a ? a.title : '#' + id;
+  if (a && a.pid) { openDrawer(a.pid, alertHint(a)); askAi({ kind: 'alert', id, label, target: 'drawer' }); }
+  else askAi({ kind: 'alert', id, label });
 }
 $('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const q = $('#chat-input').value.trim(); if (!q) return; $('#chat-input').value = ''; askAi({ kind: 'none', question: q }); });
 $('#ai-summary').addEventListener('click', () => askAi({ kind: 'overview' }));
 $('#ai-clear').addEventListener('click', () => { chat.history = []; $('#chat-log').innerHTML = '<div class="empty">Chat cleared.</div>'; });
-$('#dr-explain').addEventListener('click', () => { const pid = S.drawerPid; const p = S.procs.find((x) => x.pid === pid); const label = p ? `${p.name} (${p.pid})` : `${$('#dr-title').textContent.split('·')[0].trim()} (${pid})`; closeDrawer(); askAi({ kind: 'process', pid, label }); });
+$('#dr-explain').addEventListener('click', () => { const pid = S.drawerPid; const p = S.procs.find((x) => x.pid === pid); const label = p ? `${p.name} (${p.pid})` : `${$('#dr-title').textContent.split('·')[0].trim()} (${pid})`; askAi({ kind: 'process', pid, label, target: 'drawer' }); });
 
 // ---------- sortable tables (click a header; numbers, bytes and ages sort numerically) ----------
 const sortState = {};
@@ -894,15 +917,32 @@ async function blockIp(ip) {
 }
 
 // ---------- drawer ----------
-async function openDrawer(pid) {
+// hint = { name, exe } from the row that was clicked, used when the server has no live record for the pid.
+async function openDrawer(pid, hint) {
   if (!pid && pid !== 0) return;
-  S.drawerPid = pid;
+  if (drawerChat.pid != null && drawerChat.pid !== pid) resetDrawerChat();
+  S.drawerPid = pid; S.drawerHint = hint || null;
   $('#drawer').hidden = false; $('#drawer-backdrop').hidden = false;
   await renderDrawer();
 }
 async function renderDrawer() {
   let p;
-  try { p = await api(`/api/process/${S.drawerPid}`); } catch { $('#dr-body').innerHTML = '<p class="empty">Process no longer tracked.</p>'; return; }
+  const pid = S.drawerPid;
+  try { p = await api(`/api/process/${pid}`); } catch {
+    if (S.drawerPid !== pid) return;
+    // No live record: a service or program that never made a connection while the monitor ran, one that
+    // exited long ago, or one from before a restart. Show what the alerts know instead of a stale header.
+    const h = S.drawerHint || {}, mine = S.alerts.filter((a) => a.pid === pid);
+    const name = h.name || mine[0]?.process || `pid ${pid}`, exe = h.exe || mine[0]?.exe || '';
+    $('#dr-title').innerHTML = `${esc(name)} <span class="muted">· ${pid}</span> <span class="tag">no live record</span>`;
+    $('#dr-exe').textContent = exe;
+    $('#dr-kill').disabled = true; $('#dr-block').disabled = true; $('#dr-trust').disabled = true;
+    $('#dr-body').innerHTML = `<p class="empty">No network activity is tracked for this process. Either it has not opened a connection since the monitor started (services flagged by the inventory scan often never do), it exited a while ago, or the monitor was restarted since. Alerts are kept; live details are not.</p>
+      ${mine.length ? `<h3>Alerts (${mine.length})</h3><ul class="alert-list">${mine.map((a) => alertItem(a, true)).join('')}</ul>` : ''}`;
+    bindDrawerAlertButtons();
+    return;
+  }
+  if (S.drawerPid !== pid) return;
   $('#dr-title').innerHTML = `${esc(p.name || 'pid ' + p.pid)} <span class="muted">· ${p.pid}</span> ${sigTag(p.meta)}${p.services?.length ? `<div class="muted" style="font-size:12px;font-weight:400">hosts: ${esc(p.services.join(', '))}</div>` : ''}`;
   $('#dr-exe').textContent = p.exe || '';
   $('#dr-kill').disabled = !p.alive; $('#dr-block').disabled = !p.exe;
@@ -935,9 +975,13 @@ async function renderDrawer() {
       ${p.dns.slice(0, 60).map((d) => `<tr><td class="muted">${timeStr(d.ts)}</td><td class="mono">${esc(d.query)}</td><td>${QTYPE[d.qtype] || d.qtype}</td><td class="mono muted">${esc(d.results.slice(0, 2).join(', '))}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">none captured</td></tr>'}
     </tbody></table></div>
     ${p.beacons.some((b) => b.times.length > 3) ? `<h3>Repeated contacts</h3><dl class="kv">${p.beacons.filter((b) => b.times.length > 3).map((b) => { const iv = b.times.slice(1).map((t, i) => (t - b.times[i]) / 1000); const mean = iv.reduce((a, c) => a + c, 0) / iv.length; return `<dt class="mono">${esc(b.ip)}</dt><dd>${b.times.length} connections, every ${mean.toFixed(0)} s on average</dd>`; }).join('')}</dl>` : ''}`;
-  $$('#dr-body .ack-btn').forEach((b) => b.addEventListener('click', async (e) => { const id = +e.target.closest('li').dataset.id; await post(`/api/alerts/${id}/ack`); const a = S.alerts.find((x) => x.id === id); if (a) a.acked = true; renderDrawer(); renderOverviewAlerts(); }));
+  bindDrawerAlertButtons();
 }
-function closeDrawer() { $('#drawer').hidden = true; $('#drawer-backdrop').hidden = true; S.drawerPid = null; }
+function bindDrawerAlertButtons() {
+  $$('#dr-body .ack-btn').forEach((b) => b.addEventListener('click', async (e) => { const id = +e.target.closest('li').dataset.id; await post(`/api/alerts/${id}/ack`); const a = S.alerts.find((x) => x.id === id); if (a) a.acked = true; renderDrawer(); renderOverviewAlerts(); }));
+  $$('#dr-body .explain-btn').forEach((b) => b.addEventListener('click', (e) => { const id = +e.target.closest('li').dataset.id; const a = S.alerts.find((x) => x.id === id); askAi({ kind: 'alert', id, label: a ? a.title : '#' + id, target: 'drawer' }); }));
+}
+function closeDrawer() { $('#drawer').hidden = true; $('#drawer-backdrop').hidden = true; S.drawerPid = null; resetDrawerChat(); }
 $('#dr-close').addEventListener('click', closeDrawer);
 $('#drawer-backdrop').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
