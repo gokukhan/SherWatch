@@ -34,7 +34,10 @@ The version line says `limited (not admin)` when visibility is reduced.
 The title, a clock, red and orange pills with the count of open critical and high alerts,
 the yellow **App update needed** pill when threat data needs a code change (see
 UPDATING.md), and a search box. The search box filters whatever table is on screen:
-connections, processes, alerts or DNS.
+connections, processes, alerts, DNS or inventory. The term stays set when you change
+view (clicking a destination on the globe fills it with that IP), so a ✕ appears in the
+box whenever a term is active; click it to see everything again. Clicking the critical or
+high pill opens the Alerts view filtered to that severity.
 
 ## Overview
 
@@ -95,8 +98,12 @@ re-trust it. The trust list is in Settings and in `data/trusted.json`.
 
 ## Alerts
 
-All alerts, newest first, with a 24-hour histogram by severity. Filter by severity and by
-acknowledged state. Each alert shows the title, the explanation, the process, the target,
+All alerts, newest first, with a 24-hour histogram by severity. The cards across the top
+count alerts per severity (total and still open). Click a card to show only that severity,
+click more cards to combine them, click a selected card again to remove it, or click
+**All** to reset; the **Unacknowledged only** box narrows the list further. The counter
+next to it reads "n of m alerts" whenever a filter or the top-bar search is narrowing the
+list, and an empty list offers **Clear filters**. Each alert shows the title, the explanation, the process, the target,
 the rule ID (see DETECTION-RULES.md) and a counter when the same condition repeated within
 the cooldown window. **ack** acknowledges one alert, **Acknowledge all** clears the list.
 Alerts persist in the database and reload at startup. Export as CSV or JSON.

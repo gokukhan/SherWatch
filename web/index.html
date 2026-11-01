@@ -48,7 +48,7 @@
         <div class="pill" id="pill-update" hidden title="New threat data needs a code change. Ask Claude to update the app.">⟳ App update needed</div>
         <div class="pill pill-critical" id="pill-critical" hidden></div>
         <div class="pill pill-high" id="pill-high" hidden></div>
-        <input id="global-search" type="search" placeholder="Search process, host, IP…">
+        <span class="search-wrap"><input id="global-search" type="search" placeholder="Search process, host, IP…"><button id="search-clear" class="search-clear" hidden title="Clear search (it filters every view)">✕</button></span>
       </div>
     </header>
 
@@ -147,8 +147,8 @@
 
     <!-- ===================== ALERTS ===================== -->
     <section class="view" id="view-alerts">
+      <div class="sev-cards" id="sev-cards" title="Click a card to filter by severity; click again to remove it"></div>
       <div class="filter-row">
-        <select id="a-sev"><option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="info">Info</option></select>
         <label class="chk"><input type="checkbox" id="a-unacked"> Unacknowledged only</label>
         <span class="count" id="alert-count"></span>
         <span class="spacer"></span>

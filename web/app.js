@@ -421,7 +421,7 @@ async function initGlobe() {
     .arcAltitudeAutoScale(0.4).arcStroke(0.45).arcDashLength(0.4).arcDashGap(0.25).arcDashAnimateTime((d) => d.risk >= 25 ? 900 : 1800)
     .pointsData([]).pointLat('lat').pointLng('lon').pointColor((d) => riskColor(d.risk)).pointAltitude((d) => 0.01 + Math.min(0.15, Math.log10(1 + d.bytes_in + d.bytes_out) / 60)).pointRadius(0.32)
     .pointLabel((d) => `<div class="globe-tip"><b>${esc(d.hostname || d.ip)}</b>${d.owner ? ` · ${esc(d.owner)}` : ''}<br>${esc(d.ip)} · ${esc([d.city, d.country_name].filter(Boolean).join(', '))}<br>${esc((d.procs || []).join(', '))}<br>↑ ${fmtBytes(d.bytes_out)} · ↓ ${fmtBytes(d.bytes_in)}${d.intel ? '<br><b style="color:' + C.critical + '">' + esc(d.intel) + '</b>' : ''}</div>`)
-    .onPointClick((d) => { setView('connections'); $('#global-search').value = d.ip; refreshView(true); })
+    .onPointClick((d) => { setView('connections'); setSearch(d.ip); refreshView(true); })
     .onPointHover(hoverPause).onPolygonHover(hoverPause).onArcHover(hoverPause).onLabelHover(hoverPause)
     .arcsTransitionDuration(0).pointsTransitionDuration(0).labelsTransitionDuration(0)
     .labelsData([]).labelLat('lat').labelLng('lon')
@@ -534,7 +534,7 @@ function renderDestTable() {
   const rows = [...S.geo].sort((a, b) => (b.bytes_in + b.bytes_out) - (a.bytes_in + a.bytes_out)).slice(0, 300);
   $('#dest-count').textContent = `${S.geo.length} public hosts`;
   $('#dest-table tbody').innerHTML = rows.map((d) => `<tr class="clickable" data-ip="${esc(d.ip)}"><td title="${esc(d.ip)}">${d.intel ? '<span class="tag intel">intel</span>' : ''}${esc(d.hostname || d.ip)}</td><td>${flag(d.country)} ${esc([d.city, d.country].filter(Boolean).join(', '))}${d.owner ? ` <span class="owner">· ${esc(d.owner)}</span>` : ''}</td><td>${esc((d.procs || []).join(', '))}</td><td class="num">${fmtBytes(d.bytes_out)}</td><td class="num">${fmtBytes(d.bytes_in)}</td><td>${meter(d.risk)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No public destinations yet</td></tr>';
-  $$('#dest-table tr.clickable').forEach((tr) => tr.addEventListener('click', () => { setView('connections'); $('#global-search').value = tr.dataset.ip; refreshView(true); }));
+  $$('#dest-table tr.clickable').forEach((tr) => tr.addEventListener('click', () => { setView('connections'); setSearch(tr.dataset.ip); refreshView(true); }));
 }
 
 // ---------- connections ----------
@@ -559,7 +559,11 @@ function renderConnections() {
   $$('#conn-table .block-ip').forEach((b) => b.addEventListener('click', () => blockIp(b.dataset.ip)));
 }
 ['#f-proto', '#f-sort', '#f-public'].forEach((s) => $(s).addEventListener('change', renderConnections));
-$('#global-search').addEventListener('input', () => { if (S.view === 'connections') renderConnections(); else if (S.view === 'processes') renderProcesses(); else if (S.view === 'dns') renderDns(); else if (S.view === 'alerts') renderAlerts(); else if (S.view === 'inventory') renderInventory(); });
+// The search box filters every list view; the ✕ shows whenever a term is set so a stale term is never invisible.
+function setSearch(v) { $('#global-search').value = v; $('#search-clear').hidden = !v; }
+function rerenderCurrentView() { if (S.view === 'connections') renderConnections(); else if (S.view === 'processes') renderProcesses(); else if (S.view === 'dns') renderDns(); else if (S.view === 'alerts') renderAlerts(); else if (S.view === 'inventory') renderInventory(); }
+$('#global-search').addEventListener('input', () => { $('#search-clear').hidden = !$('#global-search').value; rerenderCurrentView(); });
+$('#search-clear').addEventListener('click', () => { setSearch(''); rerenderCurrentView(); $('#global-search').focus(); });
 
 // ---------- processes ----------
 function renderProcesses() {
@@ -587,12 +591,39 @@ function renderProcesses() {
 ['#p-sort', '#p-alive'].forEach((s) => $(s).addEventListener('change', renderProcesses));
 
 // ---------- alerts ----------
+// Severity filter: a set of selected severities; empty = all. Driven by the cards above the list.
+const sevFilter = new Set();
+let sevCardsHtml = '';
+function renderSevCards() {
+  const total = Object.fromEntries(SEV_ORDER.map((s) => [s, 0])), open = Object.fromEntries(SEV_ORDER.map((s) => [s, 0]));
+  let all = 0, allOpen = 0;
+  for (const a of S.alerts) { all++; if (!a.acked) allOpen++; if (!(a.severity in total)) continue; total[a.severity]++; if (!a.acked) open[a.severity]++; }
+  const any = sevFilter.size > 0;
+  const card = (key, n, o, color) => {
+    const cls = key === 'all' ? (any ? '' : 'active') : (sevFilter.has(key) ? 'active' : any ? 'dim' : '');
+    return `<button class="sev-card ${cls}" data-sev="${key}" style="--card:${color}"><span class="sev-card-label">${key}</span><span class="sev-card-value">${n}</span><span class="sev-card-sub">${o ? `${o} open` : n ? 'all acknowledged' : 'none'}</span></button>`;
+  };
+  const html = card('all', all, allOpen, 'var(--text-2)') + SEV_ORDER.map((s) => card(s, total[s], open[s], SEV_COLOR[s])).join('');
+  if (html !== sevCardsHtml) { sevCardsHtml = html; $('#sev-cards').innerHTML = html; }
+}
+$('#sev-cards').addEventListener('click', (e) => {
+  const b = e.target.closest('.sev-card'); if (!b) return;
+  const k = b.dataset.sev;
+  if (k === 'all') sevFilter.clear(); else if (sevFilter.has(k)) sevFilter.delete(k); else sevFilter.add(k);
+  renderAlerts();
+});
+function clearAlertFilters() { sevFilter.clear(); $('#a-unacked').checked = false; setSearch(''); renderAlerts(); }
 function renderAlerts() {
-  const sev = $('#a-sev').value, un = $('#a-unacked').checked, q = $('#global-search').value.trim().toLowerCase();
-  let rows = S.alerts.filter((a) => (!sev || a.severity === sev) && (!un || !a.acked));
+  renderSevCards();
+  const un = $('#a-unacked').checked, q = $('#global-search').value.trim().toLowerCase();
+  let rows = S.alerts.filter((a) => (!sevFilter.size || sevFilter.has(a.severity)) && (!un || !a.acked));
   if (q) rows = rows.filter((a) => [a.title, a.detail, a.process, a.exe, a.remote, a.rule].some((v) => v && v.toLowerCase().includes(q)));
-  $('#alert-count').textContent = `${rows.length} alerts`;
-  $('#alert-list').innerHTML = rows.slice(0, 400).map((a) => alertItem(a, true)).join('') || '<li class="empty">No alerts</li>';
+  const filtered = sevFilter.size || un || q;
+  $('#alert-count').textContent = filtered ? `${rows.length} of ${S.alerts.length} alerts${q ? ` matching “${q}”` : ''}` : `${rows.length} alerts`;
+  const empty = !S.alerts.length ? '<li class="empty">No alerts yet</li>'
+    : `<li class="empty">No alerts match the current filter${q ? ` and the search “${esc(q)}”` : ''}.<button class="link" id="alerts-clear">Clear filters</button></li>`;
+  $('#alert-list').innerHTML = rows.slice(0, 400).map((a) => alertItem(a, true)).join('') || empty;
+  $('#alerts-clear')?.addEventListener('click', (e) => { e.stopPropagation(); clearAlertFilters(); });
   $$('#alert-list .ack-btn').forEach((b) => b.addEventListener('click', async (e) => {
     const li = e.target.closest('li'); const id = +li.dataset.id;
     await post(`/api/alerts/${id}/ack`); const a = S.alerts.find((x) => x.id === id); if (a) a.acked = true; renderAlerts(); renderOverviewAlerts(); updateSeverityPills();
@@ -603,12 +634,14 @@ function renderAlerts() {
   const now = Date.now(), start = now - 24 * 3600e3, buckets = 24;
   const labels = [], data = Object.fromEntries(SEV_ORDER.map((s) => [s, new Array(buckets).fill(0)]));
   for (let i = 0; i < buckets; i++) labels.push(timeStr(start + i * 3600e3).slice(0, 5));
-  for (const a of S.alerts) { if (a.ts < start) continue; const b = Math.min(buckets - 1, Math.floor((a.ts - start) / 3600e3)); data[a.severity][b]++; }
+  for (const a of S.alerts) { if (a.ts < start || !data[a.severity]) continue; const b = Math.min(buckets - 1, Math.floor((a.ts - start) / 3600e3)); data[a.severity][b]++; }
   charts.alerts.data.labels = labels;
   charts.alerts.data.datasets.forEach((d) => { d.data = data[d.label]; });
   charts.alerts.update('none');
 }
-['#a-sev', '#a-unacked'].forEach((s) => $(s).addEventListener('change', renderAlerts));
+$('#a-unacked').addEventListener('change', renderAlerts);
+// Header pills jump to the alerts view filtered to that severity.
+[['#pill-critical', 'critical'], ['#pill-high', 'high']].forEach(([sel, sev]) => $(sel).addEventListener('click', () => { sevFilter.clear(); sevFilter.add(sev); setView('alerts'); refreshView(true); }));
 $('#ack-all').addEventListener('click', async () => { await post('/api/alerts/ack-all'); S.alerts.forEach((a) => a.acked = true); renderAlerts(); renderOverviewAlerts(); updateSeverityPills(); setUnacked(0); });
 
 // ---------- dns ----------
