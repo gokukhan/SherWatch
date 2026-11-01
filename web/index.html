@@ -274,11 +274,16 @@
         <div class="panel">
           <div class="panel-head"><h2>Firewall blocks</h2></div>
           <p class="muted">Rules created by NetMonitor in Windows Defender Firewall.</p>
-          <div class="table-wrap"><table class="tbl" id="block-table"><thead><tr><th>Kind</th><th>Target</th><th>Created</th><th></th></tr></thead><tbody></tbody></table></div>
+          <div class="table-wrap"><table class="tbl" id="block-table"><thead><tr><th>Kind</th><th>Target</th><th>Created</th><th>State</th><th></th></tr></thead><tbody></tbody></table></div>
           <div class="row-gap">
             <input id="block-ip-input" placeholder="block an IP address">
             <button class="btn" id="block-ip-btn">Block IP</button>
           </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Action log</h2><span class="count" id="audit-count"></span></div>
+          <p class="muted">Everything NetMonitor changed on this PC at your request, newest first. <b>revert</b> undoes a block, an allow or a trust change; a terminated process has to be started again by you.</p>
+          <div class="table-wrap"><table class="tbl" id="audit-table"><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Status</th><th></th></tr></thead><tbody></tbody></table></div>
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Notifications</h2></div>

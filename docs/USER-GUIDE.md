@@ -101,8 +101,11 @@ full command line, signer, SHA-256 (with a VirusTotal link you can open yourself
 location flags, traffic, listening sockets, the process's alerts with acknowledge buttons,
 its connections, its DNS queries and any repeated contacts (candidates for beaconing).
 **✦ Explain** asks the assistant about the process and shows the answer in the drawer
-itself, with a follow-up box. **Terminate process** runs taskkill on the process tree. **Block in firewall** adds inbound
-and outbound block rules for the executable. **Trust this program** marks the exact file
+itself, with a follow-up box. **Terminate process** runs taskkill on the process tree and
+reads **Not running** once the process is gone. **Block in firewall** adds inbound and
+outbound block rules for the executable; when a block exists the button turns green and
+reads **Blocked in firewall ✓ (click to allow)**, which removes the rules again. Every
+action lands in the Settings action log, where it can be reverted. **Trust this program** marks the exact file
 (by SHA-256) as known-good: the unsigned-program, suspicious-location, hard-coded-IP and
 new-listener rules stop firing for it, while threat-intel, beaconing, exfiltration and port
 rules still apply. A replaced or updated file has a new hash and alerts again until you
@@ -206,7 +209,11 @@ after 30 days.
 - **Threat intelligence feeds**: counts, last and next refresh, every feed with its
   source (config, feeds.json or manifest), entry count, last update and status.
   **Refresh now** forces a download.
-- **Firewall blocks**: rules the app created, with **remove**. Block any IP by hand.
+- **Firewall blocks**: rules the app created, each checked against Windows Firewall (**in
+  firewall** or **missing** when removed by hand), with **allow again**. Block any IP by hand.
+- **Action log**: every terminate, block, allow, trust and revoke the app performed, with
+  time, target and result, newest first. **revert** undoes blocks, allows and trust changes
+  and is itself logged; a terminated process cannot be brought back.
 - **Notifications**: opt in to Windows desktop notifications for critical and high alerts
   while the dashboard tab is open (uses the browser's notification permission).
 - **Trusted programs**: the hash-pinned trust list with revoke buttons.

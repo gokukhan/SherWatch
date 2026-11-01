@@ -13,7 +13,24 @@ pub enum DbMsg {
     KnownApp { exe: String, name: String, first_seen: i64 },
     Block { kind: String, target: String, rule: String, ts: i64 },
     Unblock { rule: String },
+    Audit(AuditEntry),
+    AuditReverted { id: i64, ts: i64 },
     Query(Box<dyn FnOnce(&Sql) + Send>),
+}
+
+/// One response action taken through the app (terminate, block, unblock, trust, untrust) and whether
+/// it was later reverted. `detail` carries what a revert needs (rule name, path, hash) as JSON.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub ts: i64,
+    pub action: String,
+    pub target: String,
+    pub detail: String,
+    pub ok: bool,
+    pub result: String,
+    pub reverted_ts: Option<i64>,
+    pub revert_of: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -74,6 +91,9 @@ impl Db {
             CREATE TABLE IF NOT EXISTS known_apps(exe TEXT PRIMARY KEY, name TEXT, first_seen INTEGER);
             CREATE TABLE IF NOT EXISTS blocks(id INTEGER PRIMARY KEY, kind TEXT, target TEXT, rule TEXT UNIQUE, ts INTEGER);
             CREATE TABLE IF NOT EXISTS cve_cache(id TEXT PRIMARY KEY, cpe TEXT, ts INTEGER);
+            CREATE TABLE IF NOT EXISTS audit(
+                id INTEGER PRIMARY KEY, ts INTEGER, action TEXT, target TEXT, detail TEXT, ok INTEGER, result TEXT,
+                reverted_ts INTEGER, revert_of INTEGER);
             "#,
         )?;
         let (tx, rx) = mpsc::channel::<DbMsg>();
@@ -130,6 +150,28 @@ impl Db {
         self.query_blocking(|sql| sql.query_row("SELECT COALESCE(MAX(id),0) FROM alerts", [], |r| r.get::<_, i64>(0)).unwrap_or(0))
             .unwrap_or(0)
     }
+}
+
+pub fn audit_list(sql: &Sql, limit: usize) -> rusqlite::Result<Vec<AuditEntry>> {
+    let mut st = sql.prepare("SELECT id, ts, action, target, detail, ok, result, reverted_ts, revert_of FROM audit ORDER BY ts DESC LIMIT ?1")?;
+    let rows = st.query_map(params![limit as i64], |r| {
+        Ok(AuditEntry {
+            id: r.get(0)?,
+            ts: r.get(1)?,
+            action: r.get(2)?,
+            target: r.get(3)?,
+            detail: r.get(4)?,
+            ok: r.get::<_, i64>(5)? != 0,
+            result: r.get(6)?,
+            reverted_ts: r.get(7)?,
+            revert_of: r.get(8)?,
+        })
+    })?;
+    Ok(rows.flatten().collect())
+}
+
+pub fn audit_get(sql: &Sql, id: i64) -> rusqlite::Result<Option<AuditEntry>> {
+    Ok(audit_list(sql, 100_000)?.into_iter().find(|e| e.id == id))
 }
 
 pub fn blocks(sql: &Sql) -> rusqlite::Result<Vec<BlockRule>> {
@@ -302,6 +344,15 @@ fn writer_loop(mut sql: Sql, rx: mpsc::Receiver<DbMsg>) {
                 }
                 DbMsg::Unblock { rule } => {
                     let _ = sql.execute("DELETE FROM blocks WHERE rule=?1", params![rule]);
+                }
+                DbMsg::Audit(a) => {
+                    let _ = sql.execute(
+                        "INSERT INTO audit(ts, action, target, detail, ok, result, reverted_ts, revert_of) VALUES(?1,?2,?3,?4,?5,?6,NULL,?7)",
+                        params![a.ts, a.action, a.target, a.detail, a.ok as i64, a.result, a.revert_of],
+                    );
+                }
+                DbMsg::AuditReverted { id, ts } => {
+                    let _ = sql.execute("UPDATE audit SET reverted_ts=?1 WHERE id=?2", params![ts, id]);
                 }
                 DbMsg::Query(f) => f(&sql),
             }

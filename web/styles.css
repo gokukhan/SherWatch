@@ -187,6 +187,7 @@ h1 { font-size: 18px; font-weight: 600; margin: 0; }
 .btn.danger { border-color: rgba(208,59,59,0.6); }
 .btn.danger:hover { background: rgba(208,59,59,0.25); }
 .btn.warn { border-color: rgba(250,178,25,0.5); }
+.btn.ok { border-color: rgba(12,163,12,0.6); background: rgba(12,163,12,0.12); }
 .btn.sm { padding: 2px 8px; font-size: 11.5px; }
 .icon-btn { background: none; border: 1px solid var(--border); border-radius: 6px; width: 28px; height: 28px; cursor: pointer; color: var(--text-2); }
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }

@@ -985,7 +985,8 @@ async function loadHistory() {
 
 // ---------- settings ----------
 async function loadSettings() {
-  const [intel, cfg, blocks, ov, trusted] = await Promise.all([api('/api/intel'), api('/api/config'), api('/api/blocks'), api('/api/overview'), api('/api/trusted')]);
+  const [intel, cfg, blocks, ov, trusted, audit] = await Promise.all([api('/api/intel'), api('/api/config'), api('/api/blocks'), api('/api/overview'), api('/api/trusted'), api('/api/audit?limit=200')]);
+  renderAudit(audit);
   $('#trust-table tbody').innerHTML = trusted.map((t) => `<tr><td class="mono">${esc(t.exe)}</td><td class="mono muted">${esc((t.sha256 || '').slice(0, 16))}…</td><td><button class="btn sm untrust" data-exe="${esc(t.exe)}">revoke</button></td></tr>`).join('') || '<tr><td colspan="3" class="empty">No trusted programs</td></tr>';
   $$('#trust-table .untrust').forEach((b) => b.addEventListener('click', async () => { await post('/api/action/untrust', { exe: b.dataset.exe }); loadSettings(); }));
   S.intel = intel; S.config = cfg;
@@ -993,11 +994,28 @@ async function loadSettings() {
   $('#update-reasons').innerHTML = (intel.update?.reasons || []).map((r) => `<li>• ${esc(r)}</li>`).join('');
   $('#intel-summary').innerHTML = `<dt>Malicious IPs</dt><dd>${intel.ips.toLocaleString()} addresses + ${intel.cidrs.toLocaleString()} ranges</dd><dt>Malicious domains</dt><dd>${intel.domains.toLocaleString()}</dd><dt>Last refresh</dt><dd>${intel.last_refresh ? dateTimeStr(intel.last_refresh) : '-'}</dd><dt>Next refresh</dt><dd>${intel.next_refresh ? dateTimeStr(intel.next_refresh) : '-'}</dd><dt>Manifest</dt><dd>${cfg.intel.manifest_url || '<span class="muted">none configured (feeds.json in data/feeds is still read)</span>'}</dd>`;
   $('#feed-table tbody').innerHTML = intel.feeds.map((f) => `<tr><td title="${esc(f.url)}">${esc(f.name)}</td><td class="mono">${esc(f.kind)}</td><td class="muted">${esc(f.source)}</td><td class="num">${f.entries.toLocaleString()}</td><td class="muted">${f.updated ? dateTimeStr(f.updated) : '-'}</td><td>${f.error ? `<span class="tag flag" title="${esc(f.error)}">${esc(f.error)}</span>` : '<span class="tag sig-valid">ok</span>'}</td></tr>`).join('');
-  $('#block-table tbody').innerHTML = blocks.map((b) => `<tr><td>${esc(b.kind)}</td><td class="mono">${esc(b.target)}</td><td class="muted">${dateTimeStr(b.ts)}</td><td><button class="btn sm unblock" data-rule="${esc(b.rule)}">remove</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No blocks</td></tr>';
+  $('#block-table tbody').innerHTML = blocks.map((b) => `<tr><td>${esc(b.kind)}</td><td class="mono">${esc(b.target)}</td><td class="muted">${dateTimeStr(b.ts)}</td><td>${b.present ? '<span class="tag ok">in firewall</span>' : '<span class="tag kev" title="The rule is recorded here but no longer exists in Windows Firewall (removed by hand?)">missing</span>'}</td><td><button class="btn sm unblock" data-rule="${esc(b.rule)}">${b.present ? 'allow again' : 'forget'}</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No blocks</td></tr>';
   $$('#block-table .unblock').forEach((b) => b.addEventListener('click', async () => { const r = await post('/api/action/unblock', { rule: b.dataset.rule }); toast(r.ok ? 'Rule removed' : 'Failed', r.ok ? b.dataset.rule : r.error, r.ok ? 'sev-ok' : 'sev-high'); loadSettings(); }));
   $('#capture-status').innerHTML = `<dt>Administrator</dt><dd>${ov.is_admin ? 'yes' : 'no - restart as administrator for full visibility'}</dd><dt>ETW capture</dt><dd>${ov.etw_active ? `active, ${ov.etw_events.toLocaleString()} events` : esc(ov.etw_error || 'inactive')}</dd><dt>GeoIP database</dt><dd>${ov.geo_available ? 'loaded' : 'missing'}</dd><dt>Home location</dt><dd>${S.home?.label || 'unknown'}</dd><dt>Started</dt><dd>${dateTimeStr(ov.started)}</dd><dt>Project folder</dt><dd class="mono">${esc(cfg.root)}</dd>`;
   $('#config-dump').textContent = JSON.stringify(cfg, null, 2);
   $('#hosts-issues').innerHTML = (intel.hosts_issues || []).map((h) => `<li>⚠ ${esc(h)}</li>`).join('') || '<li>No suspicious entries in the hosts file.</li>';
+}
+// Action log: every terminate / block / unblock / trust / untrust, with a revert button where possible.
+const AUDIT_LABEL = { kill: 'Terminated process', 'block-exe': 'Blocked program', 'block-ip': 'Blocked address', unblock: 'Allowed again', trust: 'Trusted program', untrust: 'Trust revoked' };
+function renderAudit(rows) {
+  $('#audit-count').textContent = rows.length ? `${rows.length} action${rows.length > 1 ? 's' : ''}` : '';
+  $('#audit-table tbody').innerHTML = rows.map((a) => {
+    const reversible = a.ok && !a.reverted_ts && a.action !== 'kill';
+    const status = a.reverted_ts ? `<span class="tag">reverted ${dateTimeStr(a.reverted_ts)}</span>` : a.ok ? '<span class="tag ok">done</span>' : `<span class="tag kev" title="${esc(a.result)}">failed</span>`;
+    return `<tr><td class="muted">${dateTimeStr(a.ts)}</td><td>${esc(AUDIT_LABEL[a.action] || a.action)}${a.revert_of ? ` <span class="muted">(revert of #${a.revert_of})</span>` : ''}</td><td class="mono">${esc(a.target)}</td><td>${status}</td><td>${reversible ? `<button class="btn sm revert" data-id="${a.id}" data-label="${esc(AUDIT_LABEL[a.action] || a.action)}">revert</button>` : ''}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="empty">No actions taken yet. Terminations, firewall blocks and trust changes are recorded here.</td></tr>';
+  $$('#audit-table .revert').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(`Revert "${b.dataset.label}"?`)) return;
+    const r = await post(`/api/audit/${b.dataset.id}/revert`);
+    toast(r.ok ? 'Reverted' : 'Could not revert', r.ok ? r.message : r.error, r.ok ? 'sev-ok' : 'sev-high');
+    loadSettings();
+    if (S.drawerPid != null) renderDrawer();
+  }));
 }
 $('#notify-toggle').checked = localStorage.getItem('nm-notify') === '1';
 $('#notify-toggle').addEventListener('change', async (e) => {
@@ -1017,6 +1035,7 @@ async function killPid(pid) {
   const r = await post('/api/action/kill', { pid });
   toast(r.ok ? 'Process terminated' : 'Could not terminate', r.ok ? r.message : r.error, r.ok ? 'sev-ok' : 'sev-high');
   refreshView(true);
+  if (S.drawerPid === pid) setTimeout(renderDrawer, 1200);
 }
 async function blockPid(pid) {
   const p = S.procs.find((x) => x.pid === pid);
@@ -1024,6 +1043,8 @@ async function blockPid(pid) {
   if (!confirm(`Block ${p.exe} in Windows Firewall (in and out)?`)) return;
   const r = await post('/api/action/block-exe', { pid, exe: p.exe });
   toast(r.ok ? 'Firewall rule added' : 'Could not add rule', r.ok ? r.message : r.error, r.ok ? 'sev-ok' : 'sev-high');
+  if (S.drawerPid === pid) renderDrawer();
+  if (S.view === 'settings') loadSettings();
 }
 async function blockIp(ip) {
   if (!ip) return;
@@ -1062,7 +1083,11 @@ async function renderDrawer() {
   if (S.drawerPid !== pid) return;
   $('#dr-title').innerHTML = `${esc(p.name || 'pid ' + p.pid)} <span class="muted">· ${p.pid}</span> ${sigTag(p.meta)}${p.services?.length ? `<div class="muted" style="font-size:12px;font-weight:400">hosts: ${esc(p.services.join(', '))}</div>` : ''}`;
   $('#dr-exe').textContent = p.exe || '';
-  $('#dr-kill').disabled = !p.alive; $('#dr-block').disabled = !p.exe;
+  $('#dr-kill').disabled = !p.alive; $('#dr-kill').textContent = p.alive ? 'Terminate process' : 'Not running';
+  $('#dr-block').disabled = !p.exe;
+  $('#dr-block').textContent = p.blocked_rule ? 'Blocked in firewall ✓ (click to allow)' : 'Block in firewall';
+  $('#dr-block').dataset.rule = p.blocked_rule || '';
+  $('#dr-block').classList.toggle('warn', !p.blocked_rule); $('#dr-block').classList.toggle('ok', !!p.blocked_rule);
   $('#dr-trust').disabled = !p.exe || !p.meta?.sha256;
   $('#dr-trust').textContent = p.trusted ? 'Trusted ✓ (click to revoke)' : 'Trust this program';
   $('#dr-trust').dataset.trusted = p.trusted ? '1' : '';
@@ -1103,7 +1128,14 @@ $('#dr-close').addEventListener('click', closeDrawer);
 $('#drawer-backdrop').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#drawer').hidden) closeDrawer(); else closeDestPop(); } });
 $('#dr-kill').addEventListener('click', () => killPid(S.drawerPid));
-$('#dr-block').addEventListener('click', () => blockPid(S.drawerPid));
+$('#dr-block').addEventListener('click', async () => {
+  const rule = $('#dr-block').dataset.rule;
+  if (!rule) return blockPid(S.drawerPid);
+  if (!confirm('Remove the firewall block and allow this program again?')) return;
+  const r = await post('/api/action/unblock', { rule });
+  toast(r.ok ? 'Program allowed again' : 'Could not remove the rule', r.ok ? rule : r.error, r.ok ? 'sev-ok' : 'sev-high');
+  renderDrawer();
+});
 $('#dr-trust').addEventListener('click', async () => {
   const p = S.procs.find((x) => x.pid === S.drawerPid) || { exe: $('#dr-exe').textContent };
   const revoke = $('#dr-trust').dataset.trusted === '1';

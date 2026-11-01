@@ -49,6 +49,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/history/alerts", get(history_alerts))
         .route("/api/history/connections", get(history_conns))
         .route("/api/blocks", get(blocks))
+        .route("/api/audit", get(audit_list))
+        .route("/api/audit/{id}/revert", post(audit_revert))
         .route("/api/action/kill", post(action_kill))
         .route("/api/action/block-exe", post(action_block_exe))
         .route("/api/action/block-ip", post(action_block_ip))
@@ -181,6 +183,13 @@ async fn process_detail(State(s): S, Path(pid): Path<u32>) -> Response {
     let listeners: Vec<Listener> = s.listeners.iter().filter(|l| l.pid == pid).map(|l| l.clone()).collect();
     let mut v = serde_json::to_value(&p).unwrap();
     v["trusted"] = json!(!p.exe.is_empty() && s.is_trusted(&p.exe, p.meta.sha256.as_deref()));
+    // Firewall state for the drawer button: the NetMonitor rule recorded for this executable, if any.
+    let blocked = if p.exe.is_empty() {
+        None
+    } else {
+        s.db.query(db::blocks).await.unwrap_or_default().into_iter().find(|b| b.kind == "app" && b.target.eq_ignore_ascii_case(&p.exe)).map(|b| b.rule)
+    };
+    v["blocked_rule"] = json!(blocked);
     v["conns"] = json!(conns);
     v["dns"] = json!(dns);
     v["alerts"] = json!(alerts);
@@ -363,10 +372,76 @@ async fn history_conns(State(s): S, Query(q): Query<HistQuery>) -> Response {
 }
 
 async fn blocks(State(s): S) -> Response {
+    // Reconcile with the firewall: a rule the user removed by hand shows as "missing".
+    let present = tokio::task::spawn_blocking(crate::actions::firewall_rules).await.unwrap_or_default();
     match s.db.query(db::blocks).await {
+        Ok(rows) => Json(
+            rows.into_iter()
+                .map(|b| {
+                    let mut v = serde_json::to_value(&b).unwrap();
+                    v["present"] = json!(present.contains(&b.rule));
+                    v
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+async fn audit_list(State(s): S, Query(q): Query<LimitQuery>) -> Response {
+    let lim = q.limit.unwrap_or(200);
+    match s.db.query(move |sql| db::audit_list(sql, lim)).await {
         Ok(rows) => Json(rows).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+/// Undo a logged action: unblock what was blocked, re-block what was unblocked, revoke or restore trust.
+/// Terminations cannot be undone. The revert is itself logged and the original entry marked reverted.
+async fn audit_revert(State(s): S, Path(id): Path<i64>) -> Json<serde_json::Value> {
+    let Ok(Some(e)) = s.db.query(move |sql| db::audit_get(sql, id)).await else {
+        return Json(json!({"ok": false, "error": "no such log entry"}));
+    };
+    if e.reverted_ts.is_some() {
+        return Json(json!({"ok": false, "error": "already reverted"}));
+    }
+    if !e.ok {
+        return Json(json!({"ok": false, "error": "that action did not succeed, so there is nothing to revert"}));
+    }
+    let d: serde_json::Value = serde_json::from_str(&e.detail).unwrap_or_default();
+    let str_of = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let (action, target, detail, r) = match e.action.as_str() {
+        "block-exe" | "block-ip" => {
+            let rule = str_of("rule");
+            let r = crate::actions::unblock(&s, &rule);
+            ("unblock", e.target.clone(), json!({"rule": rule, "kind": if e.action == "block-exe" { "app" } else { "ip" }, "target": e.target}), r)
+        }
+        "unblock" => {
+            let kind = str_of("kind");
+            let r = if kind == "ip" { crate::actions::block_ip(&s, &e.target) } else { crate::actions::block_exe(&s, &e.target) };
+            let rule = r.clone().unwrap_or_default();
+            (if kind == "ip" { "block-ip" } else { "block-exe" }, e.target.clone(), json!({"rule": rule}), r)
+        }
+        "trust" => {
+            s.untrust_exe(&e.target);
+            ("untrust", e.target.clone(), json!({"sha256": str_of("sha256")}), Ok(format!("{} removed from the trust list", e.target)))
+        }
+        "untrust" => {
+            let sha = str_of("sha256");
+            if sha.is_empty() {
+                return Json(json!({"ok": false, "error": "hash of the trusted file is not recorded; trust it again from its drawer"}));
+            }
+            s.trust_exe(&e.target, &sha);
+            ("trust", e.target.clone(), json!({"sha256": sha}), Ok(format!("{} trusted again", e.target)))
+        }
+        _ => return Json(json!({"ok": false, "error": "a terminated process cannot be brought back; start it again yourself"})),
+    };
+    crate::actions::audit(&s, action, &target, detail, &r, Some(id));
+    if r.is_ok() {
+        s.db.send(db::DbMsg::AuditReverted { id, ts: crate::util::now_ms() });
+    }
+    action_result(r)
 }
 
 #[derive(Deserialize)]
@@ -386,24 +461,38 @@ fn action_result(r: Result<String, String>) -> Json<serde_json::Value> {
 
 async fn action_kill(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
     let Some(pid) = b.pid else { return Json(json!({"ok": false, "error": "pid required"})) };
+    let name = s.process_name(pid);
+    let exe = s.process_exe(pid);
     let r = crate::actions::kill_process(pid);
     if r.is_ok() {
         s.mark_process_dead(pid);
     }
+    crate::actions::audit(&s, "kill", &format!("{} ({pid})", if name.is_empty() { "pid".to_string() } else { name }), json!({"exe": exe, "pid": pid}), &r, None);
     action_result(r)
 }
 
 async fn action_block_exe(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
     let exe = b.exe.or_else(|| b.pid.map(|p| s.process_exe(p))).unwrap_or_default();
-    action_result(crate::actions::block_exe(&s, &exe))
+    let r = crate::actions::block_exe(&s, &exe);
+    crate::actions::audit(&s, "block-exe", &exe, json!({"rule": crate::actions::exe_rule_name(&exe)}), &r, None);
+    action_result(r)
 }
 
 async fn action_block_ip(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
-    action_result(crate::actions::block_ip(&s, &b.ip.unwrap_or_default()))
+    let ip = b.ip.unwrap_or_default();
+    let r = crate::actions::block_ip(&s, &ip);
+    crate::actions::audit(&s, "block-ip", &ip, json!({"rule": r.clone().unwrap_or_default()}), &r, None);
+    action_result(r)
 }
 
 async fn action_unblock(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
-    action_result(crate::actions::unblock(&s, &b.rule.unwrap_or_default()))
+    let rule = b.rule.unwrap_or_default();
+    // Remember what the rule blocked so the removal can be reverted later.
+    let known = s.db.query(db::blocks).await.unwrap_or_default().into_iter().find(|x| x.rule == rule);
+    let r = crate::actions::unblock(&s, &rule);
+    let (kind, target) = known.map(|k| (k.kind, k.target)).unwrap_or_default();
+    crate::actions::audit(&s, "unblock", if target.is_empty() { &rule } else { &target }, json!({"rule": rule, "kind": kind, "target": target}), &r, None);
+    action_result(r)
 }
 
 async fn action_trust(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
@@ -416,13 +505,18 @@ async fn action_trust(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json
         return Json(json!({"ok": false, "error": "hash not computed yet, try again in a few seconds"}));
     }
     s.trust_exe(&exe, &sha);
-    Json(json!({"ok": true, "message": format!("{exe} trusted (sha256 {}...)", &sha[..12])}))
+    let r = Ok(format!("{exe} trusted (sha256 {}...)", &sha[..12]));
+    crate::actions::audit(&s, "trust", &exe, json!({"sha256": sha}), &r, None);
+    action_result(r)
 }
 
 async fn action_untrust(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
     let exe = b.exe.unwrap_or_default();
+    let sha = s.trusted.read().get(&exe.to_ascii_lowercase()).cloned().or_else(|| s.trusted.read().get(&exe).cloned()).unwrap_or_default();
     s.untrust_exe(&exe);
-    Json(json!({"ok": true, "message": format!("{exe} removed from the trust list")}))
+    let r = Ok(format!("{exe} removed from the trust list"));
+    crate::actions::audit(&s, "untrust", &exe, json!({"sha256": sha}), &r, None);
+    action_result(r)
 }
 
 async fn ai_status(State(s): S, Query(q): Query<ProviderQuery>) -> Json<serde_json::Value> {

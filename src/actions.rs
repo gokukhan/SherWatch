@@ -15,6 +15,24 @@ fn run(cmd: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// Record a response action in the audit log (Settings > Action log), successful or not.
+pub fn audit(state: &AppState, action: &str, target: &str, detail: serde_json::Value, result: &Result<String, String>, revert_of: Option<i64>) {
+    state.db.send(DbMsg::Audit(crate::db::AuditEntry {
+        id: 0,
+        ts: crate::util::now_ms(),
+        action: action.into(),
+        target: target.into(),
+        detail: detail.to_string(),
+        ok: result.is_ok(),
+        result: match result {
+            Ok(m) => m.clone(),
+            Err(e) => e.clone(),
+        },
+        reverted_ts: None,
+        revert_of,
+    }));
+}
+
 pub fn kill_process(pid: u32) -> Result<String, String> {
     if pid <= 4 {
         return Err("refusing to terminate a core system process".into());
@@ -27,16 +45,38 @@ fn rule_name(kind: &str, target: &str) -> String {
     format!("NetMonitor block {kind} {short}")
 }
 
-pub fn block_exe(state: &AppState, exe: &str) -> Result<String, String> {
-    if exe.is_empty() || !std::path::Path::new(exe).exists() {
-        return Err("executable path not found".into());
-    }
-    // Include a short hash of the full path so two programs with the same file name get distinct rules.
+/// The firewall rule name NetMonitor uses for an executable (a short hash of the full path keeps two
+/// programs with the same file name apart).
+pub fn exe_rule_name(exe: &str) -> String {
     let digest = {
         use sha2::Digest;
         hex::encode(sha2::Sha256::digest(exe.to_ascii_lowercase().as_bytes()))[..8].to_string()
     };
-    let rule = rule_name("app", &format!("{} {digest}", std::path::Path::new(exe).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()));
+    rule_name("app", &format!("{} {digest}", std::path::Path::new(exe).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()))
+}
+
+/// Names of the NetMonitor rules that actually exist in Windows Firewall right now (outbound direction;
+/// the inbound twin is created and deleted together with it).
+pub fn firewall_rules() -> std::collections::HashSet<String> {
+    let mut set = std::collections::HashSet::new();
+    if let Ok(out) = run("netsh", &["advfirewall", "firewall", "show", "rule", "name=all", "dir=out"]) {
+        for line in out.lines() {
+            if let Some(rest) = line.trim_start().strip_prefix("Rule Name:") {
+                let name = rest.trim();
+                if name.starts_with("NetMonitor block ") {
+                    set.insert(name.to_string());
+                }
+            }
+        }
+    }
+    set
+}
+
+pub fn block_exe(state: &AppState, exe: &str) -> Result<String, String> {
+    if exe.is_empty() || !std::path::Path::new(exe).exists() {
+        return Err("executable path not found".into());
+    }
+    let rule = exe_rule_name(exe);
     for dir in ["out", "in"] {
         run(
             "netsh",
