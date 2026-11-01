@@ -4,3 +4,4 @@
 /tools/npm/node_modules/
 /tools/rustup/
 *.log
+__pycache__/
