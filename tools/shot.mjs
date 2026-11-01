@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync, existsSync } from 'node:fs';
 
-const [url, out, w = '1600', h = '1000', waitMs = '7000', view = ''] = process.argv.slice(2);
+const [url, out, w = '1600', h = '1000', waitMs = '7000', view = '', evalExpr = ''] = process.argv.slice(2);
 const edge = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', 'C:/Program Files/Google/Chrome/Application/chrome.exe'].find(existsSync);
 const port = 9333 + Math.floor(Math.random() * 500);
 const proc = spawn(edge, [`--remote-debugging-port=${port}`, '--headless=new', '--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--hide-scrollbars', `--window-size=${w},${h}`, '--no-first-run', '--user-data-dir=' + process.env.TEMP + '/nm-shot-' + port, 'about:blank'], { stdio: 'ignore' });
@@ -28,6 +28,10 @@ try {
   await send('Page.navigate', { url });
   await sleep(+waitMs);
   if (view) { await send('Runtime.evaluate', { expression: `document.querySelector('.nav-btn[data-view="${view}"]').click()` }); await sleep(3500); }
+  if (evalExpr) {
+    const r = await Promise.race([send('Runtime.evaluate', { expression: evalExpr, returnByValue: true, awaitPromise: true }), sleep(8000).then(() => null)]);
+    console.log('eval', r ? JSON.stringify(r.result?.result?.value ?? r.result?.exceptionDetails?.text) : 'TIMEOUT (page unresponsive)');
+  }
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(out, Buffer.from(shot.result.data, 'base64'));
   const metrics = await send('Runtime.evaluate', { expression: `JSON.stringify({scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth, globeCanvas: !!document.querySelector('.globe-host canvas'), conns: document.querySelector('#t-conns')?.textContent})`, returnByValue: true });

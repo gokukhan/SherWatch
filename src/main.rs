@@ -223,13 +223,14 @@ async fn main() -> anyhow::Result<()> {
                 s.intel.refresh(false).await;
                 let sum = s.intel.summary();
                 if sum.update.update_required {
-                    s.push_alert(
+                    s.push_alert_cd(
                         model::Severity::Info,
                         "SYS-update",
                         "App update needed to integrate new threat data".into(),
                         sum.update.reasons.join(" "),
                         0,
                         "update",
+                        Some(24 * 3600 * 1000),
                     );
                 }
             }

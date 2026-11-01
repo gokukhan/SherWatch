@@ -91,7 +91,7 @@ fn net_callback(record: &EventRecord, locator: &SchemaLocator) {
             if id == 12 || id == 28 {
                 state.note_connect(pid, daddr);
             } else {
-                state.note_accept(pid);
+                state.note_accept(pid, daddr);
             }
         }
     }

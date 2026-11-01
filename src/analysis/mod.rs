@@ -74,6 +74,7 @@ struct ProcSnap {
     parent_name: String,
     flags: Vec<String>,
     sig: SigStatus,
+    signer: String,
     trusted: bool,
     info_loaded: bool,
     out_60: u64,
@@ -102,6 +103,7 @@ fn run_rules(state: &AppState) {
                     parent_name: p.parent_name.to_ascii_lowercase(),
                     flags: p.path_flags.clone(),
                     sig: p.meta.sig,
+                    signer: p.meta.signer.clone().unwrap_or_default(),
                     trusted: !p.exe.is_empty() && state.is_trusted(&p.exe, p.meta.sha256.as_deref()),
                     info_loaded: p.info_loaded,
                     out_60: p.out_last(60),
@@ -255,8 +257,10 @@ fn run_rules(state: &AppState) {
             );
         }
 
-        // R23 system process name running from the wrong place
-        if util::SYSTEM_NAMES.contains(&p.lname.as_str()) && !p.flags.iter().any(|f| f == "system" || f == "windows") && !p.exe.is_empty() {
+        // R23 system process name running from the wrong place (a valid Microsoft signature clears it:
+        // Defender's MsMpEng legitimately lives under ProgramData).
+        let ms_signed = p.sig == SigStatus::Valid && p.signer.to_ascii_lowercase().contains("microsoft");
+        if util::SYSTEM_NAMES.contains(&p.lname.as_str()) && !ms_signed && !p.flags.iter().any(|f| f == "system" || f == "windows") && !p.exe.is_empty() {
             state.push_alert(
                 Severity::Critical,
                 "R23-masquerade",
@@ -385,7 +389,9 @@ fn run_rules(state: &AppState) {
         }
         let var = intervals.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / intervals.len() as f64;
         let cv = var.sqrt() / mean;
-        if cv <= cfg.beacon_max_cv {
+        let last = recent.last().copied().unwrap_or(0);
+        let still_active = (now - last) as f64 / 1000.0 <= (mean * 3.0).max(300.0);
+        if cv <= cfg.beacon_max_cv && still_active {
             let Some(p) = procs.get(&pid) else { continue };
             if BROWSERS.contains(&p.lname.as_str()) {
                 continue;
@@ -452,8 +458,8 @@ fn run_rules(state: &AppState) {
 
     // ---- R22 inbound accepts on an unexpected process ----
     for a in state.inbound_accepts.iter() {
-        let (pid, n) = (*a.key(), *a.value());
-        if n < 1 {
+        let (pid, (n, last)) = (*a.key(), *a.value());
+        if n < 1 || now - last > 600_000 {
             continue;
         }
         let Some(p) = procs.get(&pid) else { continue };

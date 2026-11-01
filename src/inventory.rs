@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+/// Inventory rules re-evaluate every 30 minutes; one alert a day per item is enough.
+const SLOW_RULE_COOLDOWN: i64 = 24 * 3600 * 1000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KevEntry {
     #[serde(rename = "cveID")]
@@ -457,7 +460,7 @@ fn raise_alerts(state: &AppState) {
             let sev = if ransomware && item.network_active { Severity::Critical } else { Severity::High };
             let pid = item.pids.first().copied().unwrap_or(0);
             let ids: Vec<String> = exploited.iter().take(4).map(|k| k.cve_id.clone()).collect();
-            state.push_alert(
+            state.push_alert_cd(
                 sev,
                 "R24-exploited-software",
                 format!("{} {} has actively exploited vulnerabilities and looks unpatched", item.product.clone().if_empty(&item.name), item.version),
@@ -473,18 +476,20 @@ fn raise_alerts(state: &AppState) {
                 ),
                 pid,
                 &item.id,
+                Some(SLOW_RULE_COOLDOWN),
             );
         }
         if item.max_cvss >= 9.0 || item.cves.iter().any(|c| c.kev) {
             let worst = item.cves.iter().max_by(|a, b| a.cvss.unwrap_or(0.0).partial_cmp(&b.cvss.unwrap_or(0.0)).unwrap()).cloned().unwrap_or_default();
             let sev = if item.cves.iter().any(|c| c.kev) { Severity::High } else { Severity::Medium };
-            state.push_alert(
+            state.push_alert_cd(
                 sev,
                 "R26-known-cve",
                 format!("{} {} has {} published CVEs (worst CVSS {:.1})", item.product.clone().if_empty(&item.name), item.version, item.cves.len(), item.max_cvss),
                 format!("{}: {}", worst.cve_id, crate::util::truncate(&worst.summary, 200)),
                 item.pids.first().copied().unwrap_or(0),
                 &item.id,
+                Some(SLOW_RULE_COOLDOWN),
             );
         }
     }
@@ -492,7 +497,7 @@ fn raise_alerts(state: &AppState) {
         let since = inv.os.kev_since_patch.len();
         if age > 45 || since > 0 {
             let sev = if since > 0 && age > 30 { Severity::High } else { Severity::Medium };
-            state.push_alert(
+            state.push_alert_cd(
                 sev,
                 "R25-os-patch",
                 format!("Windows was last updated {age} days ago"),
@@ -502,6 +507,7 @@ fn raise_alerts(state: &AppState) {
                 ),
                 0,
                 "windows",
+                Some(SLOW_RULE_COOLDOWN),
             );
         }
     }

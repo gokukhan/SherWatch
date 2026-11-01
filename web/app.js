@@ -691,7 +691,7 @@ async function askAi({ kind = 'none', pid, id, remote, question = '', label = ''
 $('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const q = $('#chat-input').value.trim(); if (!q) return; $('#chat-input').value = ''; askAi({ kind: 'none', question: q }); });
 $('#ai-summary').addEventListener('click', () => askAi({ kind: 'overview' }));
 $('#ai-clear').addEventListener('click', () => { chat.history = []; $('#chat-log').innerHTML = '<div class="empty">Chat cleared.</div>'; });
-$('#dr-explain').addEventListener('click', () => { const p = S.procs.find((x) => x.pid === S.drawerPid); closeDrawer(); askAi({ kind: 'process', pid: S.drawerPid ?? p?.pid, label: p ? `${p.name} (${p.pid})` : '' }); });
+$('#dr-explain').addEventListener('click', () => { const pid = S.drawerPid; const p = S.procs.find((x) => x.pid === pid); const label = p ? `${p.name} (${p.pid})` : `${$('#dr-title').textContent.split('·')[0].trim()} (${pid})`; closeDrawer(); askAi({ kind: 'process', pid, label }); });
 
 // ---------- sortable tables (click a header; numbers, bytes and ages sort numerically) ----------
 const sortState = {};
@@ -711,6 +711,10 @@ function parseCell(td) {
 function applySort(table) {
   const st = sortState[table.id]; if (!st) return;
   const tbody = table.tBodies[0]; if (!tbody) return;
+  // Row moves below trigger the MutationObserver; the flag is cleared on the next macrotask so
+  // the observer's microtasks see it and skip instead of re-sorting forever.
+  table.dataset.sorting = '1';
+  setTimeout(() => { delete table.dataset.sorting; }, 0);
   const rows = Array.from(tbody.rows).filter((r) => !r.classList.contains('inv-detail') && !r.querySelector('.empty'));
   const details = new Map(); Array.from(tbody.rows).forEach((r, i) => { if (r.classList.contains('inv-detail')) details.set(tbody.rows[i - 1], r); });
   rows.sort((a, b) => {
@@ -735,7 +739,15 @@ function initSortableTables() {
     });
   });
   // Re-apply after every re-render.
-  new MutationObserver((muts) => { for (const m of muts) { const t = m.target.closest?.('table.tbl'); if (t && sortState[t.id] && m.type === 'childList' && m.target.tagName === 'TBODY') { queueMicrotask(() => { if (!t.dataset.sorting) { t.dataset.sorting = '1'; applySort(t); delete t.dataset.sorting; } }); } } }).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver((muts) => {
+    const seen = new Set();
+    for (const m of muts) {
+      const t = m.target.closest?.('table.tbl');
+      if (!t || !sortState[t.id] || m.type !== 'childList' || m.target.tagName !== 'TBODY' || t.dataset.sorting || seen.has(t)) continue;
+      seen.add(t);
+      setTimeout(() => { if (!t.dataset.sorting) applySort(t); }, 0);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 }
 
 // ---------- history ----------
@@ -914,7 +926,7 @@ async function refreshView(force) {
   initCharts();
   initSortableTables();
   connectWs();
-  try { S.series = await api('/api/series'); } catch {}
+  try { S.series = (await api('/api/series')).slice(-300); } catch {}
   try { S.alerts = await api('/api/alerts?limit=300'); } catch {}
   try { S.home = await api('/api/home'); } catch {}
   await initGlobe();

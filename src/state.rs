@@ -73,7 +73,7 @@ pub struct AppState {
 
     pub alerts: RwLock<VecDeque<Alert>>,
     alert_seq: AtomicI64,
-    cooldown: Mutex<HashMap<String, (i64, i64)>>,
+    cooldown: Mutex<HashMap<String, (i64, i64, i64)>>,
 
     pub dns: RwLock<VecDeque<DnsEvent>>,
     pub ip_to_host: DashMap<IpAddr, String>,
@@ -85,7 +85,7 @@ pub struct AppState {
     pub local_ips: DashSet<IpAddr>,
     pub beacons: DashMap<(u32, IpAddr), VecDeque<i64>>,
     pub dst_window: DashMap<u32, VecDeque<(i64, IpAddr)>>,
-    pub inbound_accepts: DashMap<u32, u64>,
+    pub inbound_accepts: DashMap<u32, (u64, i64)>,
 
     pub ws_tx: broadcast::Sender<String>,
     pub etw_active: AtomicBool,
@@ -233,7 +233,20 @@ impl AppState {
         let mut fresh = false;
         self.procs
             .entry(pid)
-            .and_modify(|p| p.last_seen = now)
+            .and_modify(|p| {
+                if !p.alive && p.info_loaded && now - p.last_seen > 5_000 {
+                    // Windows reused the PID for a new process: start a clean record.
+                    *p = ProcessInfo::new(pid, now);
+                    fresh = true;
+                } else {
+                    p.last_seen = now;
+                    if !p.info_loaded && !p.alive {
+                        // Seen again after a failed lookup: give the inspector another chance.
+                        p.alive = true;
+                        fresh = true;
+                    }
+                }
+            })
             .or_insert_with(|| {
                 fresh = true;
                 ProcessInfo::new(pid, now)
@@ -385,6 +398,10 @@ impl AppState {
     fn on_new_connection(&self, key: &FlowKey) {
         let remote = key.remote.ip();
         self.touch_process(key.pid);
+        // Connections discovered in the first seconds existed before we started: not "new" contacts.
+        if now_ms() - self.started < 5_000 {
+            return;
+        }
         if util::is_public_ip(&remote) {
             let now = now_ms();
             let mut b = self.beacons.entry((key.pid, remote)).or_default();
@@ -510,8 +527,14 @@ impl AppState {
         }
     }
 
-    pub fn note_accept(&self, pid: u32) {
-        *self.inbound_accepts.entry(pid).or_default() += 1;
+    pub fn note_accept(&self, pid: u32, peer: IpAddr) {
+        let peer = util::normalize_ip(peer);
+        if peer.is_loopback() {
+            return;
+        }
+        let mut e = self.inbound_accepts.entry(pid).or_insert((0, 0));
+        e.0 += 1;
+        e.1 = now_ms();
     }
 
     pub fn upsert_listener(&self, pid: u32, proto: Proto, addr: IpAddr, port: u16) -> bool {
@@ -559,7 +582,19 @@ impl AppState {
         let active: std::collections::HashSet<u32> = self.conns.iter().map(|c| c.pid).collect();
         self.procs.retain(|pid, p| active.contains(pid) || now - p.last_seen < if p.alive { 3_600_000 } else { 600_000 });
         self.beacons.retain(|(pid, _), v| self.procs.contains_key(pid) && v.back().map(|t| now - t < 4 * 3600_000).unwrap_or(false));
-        self.dst_window.retain(|pid, _| self.procs.contains_key(pid));
+        self.dst_window.retain(|pid, w| {
+            while w.front().map(|(t, _)| now - t > 60_000).unwrap_or(false) {
+                w.pop_front();
+            }
+            self.procs.contains_key(pid) && !w.is_empty()
+        });
+        self.dns_windows.retain(|(pid, _), w| {
+            while w.events.front().map(|(t, ..)| now - t > 300_000).unwrap_or(false) {
+                w.events.pop_front();
+            }
+            self.procs.contains_key(pid) && !w.events.is_empty()
+        });
+        self.inbound_accepts.retain(|pid, (_, last)| self.procs.contains_key(pid) && now - *last < 600_000);
     }
 
     // ---------- DNS ----------
@@ -616,31 +651,38 @@ impl AppState {
     // ---------- alerts ----------
 
     pub fn push_alert(&self, severity: Severity, rule: &str, title: String, detail: String, pid: u32, remote: &str) -> bool {
+        self.push_alert_cd(severity, rule, title, detail, pid, remote, None)
+    }
+
+    /// `cooldown` overrides the configured window (used by slow, periodic rules so they do not re-alert every scan).
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_alert_cd(&self, severity: Severity, rule: &str, title: String, detail: String, pid: u32, remote: &str, cooldown: Option<i64>) -> bool {
         let now = now_ms();
         let process = self.process_name(pid);
         let exe = self.process_exe(pid);
         let key = format!("{rule}|{}|{remote}", if exe.is_empty() { pid.to_string() } else { exe.to_ascii_lowercase() });
-        let cooldown_ms = (self.cfg.analysis.alert_cooldown_minutes * 60_000) as i64;
+        let cooldown_ms = cooldown.unwrap_or((self.cfg.analysis.alert_cooldown_minutes * 60_000) as i64);
         {
             let mut cd = self.cooldown.lock();
-            if let Some((last, id)) = cd.get(&key).copied() {
-                if now - last < cooldown_ms {
-                    // Bump the existing alert's counter instead of creating a new one.
-                    let mut alerts = self.alerts.write();
-                    if let Some(a) = alerts.iter_mut().find(|a| a.id == id) {
-                        a.count += 1;
-                        a.ts = now;
-                        self.db.send(DbMsg::Alert(a.clone()));
+            if let Some((first, id, last_bump)) = cd.get(&key).copied() {
+                if now - first < cooldown_ms {
+                    // Same condition still true: count it at most once a minute, keep the original time.
+                    if now - last_bump >= 60_000 {
+                        let mut alerts = self.alerts.write();
+                        if let Some(a) = alerts.iter_mut().find(|a| a.id == id) {
+                            a.count += 1;
+                            self.db.send(DbMsg::Alert(a.clone()));
+                        }
+                        cd.insert(key, (first, id, now));
                     }
-                    cd.insert(key, (now, id));
                     return false;
                 }
             }
             if cd.len() > 5000 {
-                cd.retain(|_, (t, _)| now - *t < cooldown_ms);
+                cd.retain(|_, (t, _, _)| now - *t < cooldown_ms);
             }
             let id = self.alert_seq.fetch_add(1, Ordering::SeqCst) + 1;
-            cd.insert(key, (now, id));
+            cd.insert(key, (now, id, now));
             let alert = Alert {
                 id,
                 ts: now,
@@ -751,7 +793,7 @@ impl AppState {
                 conns: cc,
             });
         }
-        top.sort_by(|a, b| (b.rate_out + b.rate_in).partial_cmp(&(a.rate_out + a.rate_in)).unwrap());
+        top.sort_by(|a, b| (b.bytes_out + b.bytes_in).cmp(&(a.bytes_out + a.bytes_in)));
         top.truncate(8);
 
         let alive = self.procs.iter().filter(|p| p.alive).count();
@@ -815,7 +857,7 @@ impl AppState {
             if c.scope == "public" {
                 public += 1;
                 let k = c.country.clone().unwrap_or_else(|| "??".into());
-                *countries.entry(k).or_default() += c.bytes_in + c.bytes_out + 1;
+                *countries.entry(k).or_default() += 1;
             }
         }
         let mut countries: Vec<(String, u64)> = countries.into_iter().collect();

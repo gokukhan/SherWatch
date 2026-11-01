@@ -1,7 +1,8 @@
 //! Built-in analyst assistant. Builds a compact, factual context from the live state
 //! (process, alert, connection or the whole picture) and asks a language model to explain
 //! it in plain words. Providers:
-//!   - Ollama (local, free, nothing leaves the PC) - the default when it is running,
+//!   - a free keyless web model (pollinations.ai) - the default, as the user asked,
+//!   - Ollama (local, free, nothing leaves the PC),
 //!   - any OpenAI-compatible endpoint (Groq, OpenRouter, Gemini, LM Studio...),
 //!   - Anthropic Claude (Messages API over raw HTTP).
 

@@ -81,9 +81,17 @@ async fn guard_local(State(s): S, req: axum::extract::Request, next: axum::middl
             host == "127.0.0.1" || host == "localhost" || host == "::1" || host == bind
         })
         .unwrap_or(false);
+    // Origin must match scheme, host and port exactly (a prefix check would accept lookalike hosts).
+    let port = s.cfg.server.port;
+    let allowed_origins = [
+        format!("http://127.0.0.1:{port}"),
+        format!("http://localhost:{port}"),
+        format!("http://[::1]:{port}"),
+        format!("http://{bind}:{port}"),
+    ];
     let origin_ok = match req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
         None => true,
-        Some(o) => o.starts_with("http://127.0.0.1") || o.starts_with("http://localhost") || o.starts_with("http://[::1]") || o.starts_with(&format!("http://{bind}")),
+        Some(o) => allowed_origins.iter().any(|a| a.eq_ignore_ascii_case(o.trim_end_matches('/'))),
     };
     if !host_ok || !origin_ok {
         return (StatusCode::FORBIDDEN, "NetMonitor only answers the local dashboard").into_response();
@@ -313,6 +321,7 @@ async fn intel_refresh(State(s): S) -> Json<serde_json::Value> {
 async fn config(State(s): S) -> Json<serde_json::Value> {
     let mut v = serde_json::to_value(&s.cfg).unwrap();
     v["virustotal"]["api_key"] = json!(if s.cfg.virustotal.api_key.trim().is_empty() { "" } else { "(set)" });
+    v["ai"]["api_key"] = json!(if s.cfg.ai.api_key.trim().is_empty() { "" } else { "(set)" });
     v["root"] = json!(s.root.display().to_string());
     v["app_version"] = json!(crate::intel::APP_VERSION);
     Json(v)
