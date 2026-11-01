@@ -31,7 +31,7 @@
     </nav>
     <div class="nav-foot">
       <div class="status-row" title="Green: the page receives live updates from the app. Red: the app is stopped or restarting; the page reconnects by itself."><span class="dot" id="st-ws"></span>Live feed</div>
-      <div class="status-row" title="Green: per-process byte counts and DNS are being captured (needs administrator). Red: only the connection table is available."><span class="dot" id="st-etw"></span>Packet capture</div>
+      <div class="status-row" title="Green: per-process byte counts (and DNS on Windows) are being captured (needs administrator / root). Red: only the connection table is available."><span class="dot" id="st-etw"></span>Packet capture</div>
       <div class="status-row" title="Green: the app runs elevated. Red: started without administrator rights; launch run.cmd and accept the prompt for full visibility."><span class="dot" id="st-admin"></span>Administrator</div>
       <div class="status-row" title="Green: threat-intelligence feeds are loaded. Yellow: no feed data yet."><span class="dot" id="st-intel"></span>Threat intel</div>
       <div class="version" id="version"></div>
@@ -200,7 +200,7 @@
       </div>
       <div class="grid-inv">
         <div class="panel">
-          <div class="panel-head"><h2>Windows</h2><span class="panel-sub" id="os-sub"></span></div>
+          <div class="panel-head"><h2>Operating system</h2><span class="panel-sub" id="os-sub"></span></div>
           <dl class="kv" id="os-kv"></dl>
           <ul class="plain" id="os-kev"></ul>
         </div>
@@ -278,7 +278,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Firewall blocks</h2></div>
-          <p class="muted">Rules created by SherWatch in Windows Defender Firewall.</p>
+          <p class="muted">Rules created by SherWatch in the firewall.</p>
           <div class="table-wrap"><table class="tbl" id="block-table"><thead><tr><th>Kind</th><th>Target</th><th>Created</th><th>State</th><th></th></tr></thead><tbody></tbody></table></div>
           <div class="row-gap">
             <input id="block-ip-input" placeholder="block an IP address">
@@ -292,7 +292,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Notifications</h2></div>
-          <label class="chk"><input type="checkbox" id="notify-toggle"> Show Windows desktop notifications for critical and high alerts (while this page is open)</label>
+          <label class="chk"><input type="checkbox" id="notify-toggle"> Show desktop notifications for critical and high alerts (while this page is open)</label>
           <p class="muted" id="notify-note"></p>
         </div>
         <div class="panel">
@@ -314,7 +314,7 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>About</h2></div>
-          <p class="muted">SherWatch Command Center, by Sher Khan. Open source under the Apache License 2.0, provided as is, without warranty. Everything runs locally. Data sources: abuse.ch Feodo Tracker and SSL Blacklist, Spamhaus DROP, IPsum, Tor exit list, Blackbook, OpenPhish. GeoIP by <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a> (CC BY 4.0). Globe by globe.gl / three.js, charts by Chart.js, map data from world-atlas (Natural Earth).</p>
+          <p class="muted">SherWatch Command Center, by Sher Khan. Open source under the Apache License 2.0, provided as is, without warranty. Everything runs locally. Available for Windows, macOS and Linux. Data sources: abuse.ch Feodo Tracker and SSL Blacklist, Spamhaus DROP, IPsum, Tor exit list, Blackbook, OpenPhish. GeoIP by <a href="https://db-ip.com" target="_blank" rel="noopener">DB-IP</a> (CC BY 4.0). Globe by globe.gl / three.js, charts by Chart.js, map data from world-atlas (Natural Earth).</p>
         </div>
       </div>
     </section>

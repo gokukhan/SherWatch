@@ -1,6 +1,6 @@
-//! Resolves PIDs to executable details, verifies Authenticode signatures (including
-//! catalog-signed Windows binaries, via PowerShell), hashes executables, and does
-//! reverse DNS for destinations that no captured DNS query explains.
+//! Resolves PIDs to executable details, verifies code signatures (Authenticode via PowerShell on
+//! Windows, codesign on macOS, package ownership on Linux; see `crate::platform`), hashes
+//! executables, and does reverse DNS for destinations that no captured DNS query explains.
 
 use crate::model::{ExeMeta, SigStatus};
 use crate::state::AppState;
@@ -46,12 +46,9 @@ pub fn start_process_worker(state: Arc<AppState>, rx: mpsc::Receiver<u32>) {
                     sys.refresh_processes_specifics(ProcessesToUpdate::Some(&sp), true, kind);
                 }
                 for pid in pids {
-                    if pid == 0 {
-                        state.apply_process_info(pid, "System Idle".into(), String::new(), String::new(), 0, String::new(), 0, String::new());
-                        continue;
-                    }
-                    if pid == 4 {
-                        state.apply_process_info(pid, "System".into(), "C:\\Windows\\System32\\ntoskrnl.exe".into(), String::new(), 0, String::new(), 0, "SYSTEM".into());
+                    // Kernel pseudo-processes the OS does not list (Windows pid 0 and 4).
+                    if let Some((name, exe, user)) = crate::platform::pseudo_process(pid) {
+                        state.apply_process_info(pid, name.into(), exe.into(), String::new(), 0, String::new(), 0, user.into());
                         continue;
                     }
                     let Some(p) = sys.process(Pid::from_u32(pid)) else {
@@ -142,59 +139,9 @@ fn hash_file(path: &str) -> (Option<String>, u64) {
     (Some(hex::encode(hasher.finalize())), total)
 }
 
-/// Uses Get-AuthenticodeSignature so catalog-signed OS files verify correctly.
+/// Signature status per lower-cased path; the check itself is platform-specific.
 fn verify_signatures(paths: &[String]) -> std::collections::HashMap<String, (SigStatus, Option<String>)> {
-    let mut out = std::collections::HashMap::new();
-    if paths.is_empty() {
-        return out;
-    }
-    let list = paths
-        .iter()
-        .map(|p| format!("'{}'", p.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-    let script = format!(
-        "$ErrorActionPreference='SilentlyContinue'; $p=@({list}); Get-AuthenticodeSignature -LiteralPath $p | ForEach-Object {{ [pscustomobject]@{{ Path=$_.Path; Status=$_.Status.ToString(); Signer=$(if($_.SignerCertificate){{$_.SignerCertificate.Subject}}else{{''}}) }} }} | ConvertTo-Json -Compress"
-    );
-    let output = crate::util::quiet(
-        std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
-            .stdin(std::process::Stdio::null()),
-    )
-    .output();
-    let Ok(output) = output else { return out };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let text = text.trim();
-    if text.is_empty() {
-        return out;
-    }
-    let parsed: serde_json::Value = match serde_json::from_str(text) {
-        Ok(v) => v,
-        Err(_) => return out,
-    };
-    let items: Vec<serde_json::Value> = match parsed {
-        serde_json::Value::Array(a) => a,
-        other => vec![other],
-    };
-    for it in items {
-        let path = it.get("Path").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
-        let status = it.get("Status").and_then(|v| v.as_str()).unwrap_or("");
-        let signer_raw = it.get("Signer").and_then(|v| v.as_str()).unwrap_or("");
-        let signer = signer_raw
-            .split(',')
-            .map(|s| s.trim())
-            .find(|s| s.starts_with("CN="))
-            .map(|s| s.trim_start_matches("CN=").trim_matches('"').to_string())
-            .filter(|s| !s.is_empty());
-        let sig = match status {
-            "Valid" => SigStatus::Valid,
-            "NotSigned" => SigStatus::NotSigned,
-            "HashMismatch" | "NotTrusted" | "UnknownError" | "Incompatible" | "NotSupportedFileFormat" => SigStatus::Invalid,
-            _ => SigStatus::Unknown,
-        };
-        out.insert(path, (sig, signer));
-    }
-    out
+    crate::platform::verify_signatures(paths)
 }
 
 pub fn start_rdns_worker(state: Arc<AppState>, rx: mpsc::Receiver<IpAddr>) {

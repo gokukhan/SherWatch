@@ -25,11 +25,12 @@ repository root). The components below keep their own licences.
 
 ## Rust crates
 
-tokio, axum, serde, serde_json, rusqlite (bundled SQLite), ferrisetw, maxminddb,
-rust-embed, mime_guess, reqwest (rustls), dashmap, sha2, hex, parking_lot, chrono, ipnet,
-tracing, tracing-subscriber, anyhow, toml, netstat2, sysinfo, dns-lookup, futures, flate2,
-windows. All are MIT and/or Apache-2.0 licensed; see `Cargo.lock` for exact versions and
-`cargo license` for the full tree.
+tokio, axum, serde, serde_json, rusqlite (bundled SQLite), maxminddb, rust-embed,
+mime_guess, reqwest (rustls), dashmap, sha2, hex, parking_lot, chrono, ipnet, tracing,
+tracing-subscriber, anyhow, toml, sysinfo, dns-lookup, futures, flate2. Windows only:
+ferrisetw, netstat2, windows. macOS and Linux only: libc (Apache-2.0 / MIT). All are MIT
+and/or Apache-2.0 licensed; see `Cargo.lock` for exact versions and `cargo license` for the
+full tree.
 
 ## Frontend libraries (vendored in web/vendor)
 
@@ -41,8 +42,13 @@ windows. All are MIT and/or Apache-2.0 licensed; see `Cargo.lock` for exact vers
 | topojson-client | ISC |
 | world-atlas (Natural Earth data) | ISC (LICENSE-world-atlas); Natural Earth is public domain |
 
-## Windows components used at runtime
+## Operating-system components used at runtime
 
-Event Tracing for Windows providers Microsoft-Windows-Kernel-Network and
-Microsoft-Windows-DNS-Client, the IP Helper API socket tables, PowerShell's
-`Get-AuthenticodeSignature`, `taskkill`, `netsh advfirewall` and `logman`.
+These are part of the operating system (or its standard packages) and are called as
+tools; nothing is bundled.
+
+| OS | Components |
+|---|---|
+| Windows | Event Tracing for Windows providers Microsoft-Windows-Kernel-Network and Microsoft-Windows-DNS-Client, the IP Helper API socket tables, PowerShell (`Get-AuthenticodeSignature`, WMI and registry queries), `taskkill`, `netsh advfirewall`, `logman`. |
+| macOS | libproc, `nettop`, `codesign`, `pfctl` (pf anchor `com.sherkhan.sherwatch`), `launchctl`, `system_profiler`, `sw_vers`, `softwareupdate`, `kill`. |
+| Linux | `/proc`, `ss` (iproute2), `nft` (nftables) or `iptables`, `dpkg`/`rpm`/`flatpak`, `systemctl`, `/etc/os-release`, `kill`. |

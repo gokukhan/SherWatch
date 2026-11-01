@@ -122,9 +122,14 @@ pub struct Overview {
     pub now: i64,
     pub started: i64,
     pub is_admin: bool,
+    /// Byte capture is running (the field keeps its ETW name; the backend is named below).
     pub etw_active: bool,
     pub etw_error: Option<String>,
     pub etw_events: u64,
+    /// "etw" (Windows), "nettop" (macOS) or "ss" (Linux).
+    pub capture_backend: &'static str,
+    /// True when DNS queries are captured per process (Windows only).
+    pub dns_capture: bool,
     pub geo_available: bool,
     pub rate_out: u64,
     pub rate_in: u64,
@@ -450,6 +455,12 @@ impl AppState {
             });
         if fresh {
             self.on_new_connection(&key);
+            // No accept events outside Windows (ETW): a fresh TCP flow on a port this process listens on
+            // is an inbound connection, which is what R22 counts.
+            #[cfg(not(windows))]
+            if proto == Proto::Tcp && self.listeners.contains_key(&(Proto::Tcp, local.port(), pid)) {
+                self.note_accept(pid, remote.ip());
+            }
         }
     }
 
@@ -521,6 +532,26 @@ impl AppState {
                 self.total_in.fetch_add(size64, Ordering::Relaxed);
             }
         }
+    }
+
+    /// Bytes a process moved that could not be attributed to one of its connections (per-process
+    /// counters from nettop on macOS: UDP without a listed socket, sockets closed between samples).
+    /// Counted in the process's totals, rates and the global series like any other traffic.
+    pub fn record_process_bytes(&self, pid: u32, out: u64, inn: u64) {
+        if out + inn == 0 {
+            return;
+        }
+        self.touch_process(pid);
+        if let Some(mut p) = self.procs.get_mut(&pid) {
+            p.bytes_out += out;
+            p.sec_out += out;
+            p.bytes_in += inn;
+            p.sec_in += inn;
+        }
+        self.sec_out.fetch_add(out, Ordering::Relaxed);
+        self.total_out.fetch_add(out, Ordering::Relaxed);
+        self.sec_in.fetch_add(inn, Ordering::Relaxed);
+        self.total_in.fetch_add(inn, Ordering::Relaxed);
     }
 
     pub fn note_connect(&self, pid: u32, remote: IpAddr) {
@@ -890,6 +921,8 @@ impl AppState {
             etw_active: self.etw_active.load(Ordering::Relaxed),
             etw_error: self.etw_error.read().clone(),
             etw_events: self.etw_events.load(Ordering::Relaxed),
+            capture_backend: crate::platform::CAPTURE_BACKEND,
+            dns_capture: crate::platform::DNS_CAPTURE && self.etw_active.load(Ordering::Relaxed),
             geo_available: self.geo.available(),
             rate_out,
             rate_in,

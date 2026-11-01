@@ -197,7 +197,7 @@ function onTick(m) {
   $('#t-conns-sub').textContent = `${m.public_conns} to the internet`;
   $('#t-procs').textContent = m.sample.procs;
   $('#st-etw').className = 'dot ' + (m.etw ? 'on' : 'off');
-  $('#st-etw').title = m.etw ? `${m.etw_events} events captured` : 'ETW capture inactive';
+  $('#st-etw').title = m.etw ? `${m.etw_events} events captured` : 'capture inactive';
   setUnacked(m.unacked);
   drawSpark($('#spark-out'), S.series.map((s) => s.bytes_out), C.s1);
   drawSpark($('#spark-in'), S.series.map((s) => s.bytes_in), C.s3);
@@ -653,7 +653,7 @@ function renderConnections() {
     <td>${whereCell(c)}</td>
     <td class="muted">${esc(c.state)}</td><td class="num">${fmtBytes(c.bytes_out)}</td><td class="num">${fmtBytes(c.bytes_in)}</td>
     <td class="muted">${fmtAge(now - c.first_seen)}</td><td>${meter(c.risk)}</td>
-    <td><button class="btn sm ai explain-conn" data-pid="${c.pid}" data-remote="${esc(c.remote_addr)}:${c.remote_port}" title="Ask the assistant">✦</button> <button class="btn sm block-ip" data-ip="${esc(c.remote_addr)}" title="Block this IP in Windows Firewall">block IP</button></td></tr>`).join('') || '<tr><td colspan="13" class="empty">No connections match</td></tr>';
+    <td><button class="btn sm ai explain-conn" data-pid="${c.pid}" data-remote="${esc(c.remote_addr)}:${c.remote_port}" title="Ask the assistant">✦</button> <button class="btn sm block-ip" data-ip="${esc(c.remote_addr)}" title="Block this IP in the firewall">block IP</button></td></tr>`).join('') || '<tr><td colspan="13" class="empty">No connections match</td></tr>';
   $$('#conn-table .explain-conn').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(+b.dataset.pid); askAi({ kind: 'connection', pid: +b.dataset.pid, remote: b.dataset.remote, label: `${procName(+b.dataset.pid)} → ${b.dataset.remote}`, target: 'drawer' }); }));
   $$('#conn-table tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) openDrawer(+tr.dataset.pid); }));
   $$('#conn-table .block-ip').forEach((b) => b.addEventListener('click', () => blockIp(b.dataset.ip)));
@@ -777,7 +777,7 @@ async function loadInventory(silent) {
   const os = inv.os || {};
   $('#os-sub').textContent = os.caption ? `${os.caption} ${os.display_version || ''}` : 'not scanned yet';
   const age = os.patch_age_days;
-  $('#os-kv').innerHTML = os.caption ? `<dt>Build</dt><dd>${esc(os.version)}.${esc(os.ubr)}</dd><dt>Last update installed</dt><dd>${os.last_hotfix ? dateTimeStr(os.last_hotfix).slice(0, 10) : 'unknown'}${age != null ? ` <span class="tag ${age > 45 ? 'flag' : 'ok'}">${age} days ago</span>` : ''}</dd><dt>Last boot</dt><dd>${os.last_boot ? dateTimeStr(os.last_boot) : '-'}</dd><dt>Exploited since update</dt><dd>${os.kev_since_patch?.length ? `<span class="tag kev">${os.kev_since_patch.length} Windows vulnerabilities</span>` : '<span class="tag ok">none catalogued</span>'}</dd>` : '<dd class="muted">Scanning…</dd>';
+  $('#os-kv').innerHTML = os.caption ? `<dt>Build</dt><dd>${esc(os.version)}.${esc(os.ubr)}</dd><dt>Last update installed</dt><dd>${os.last_hotfix ? dateTimeStr(os.last_hotfix).slice(0, 10) : 'unknown'}${age != null ? ` <span class="tag ${age > 45 ? 'flag' : 'ok'}">${age} days ago</span>` : ''}</dd><dt>Last boot</dt><dd>${os.last_boot ? dateTimeStr(os.last_boot) : '-'}</dd><dt>Exploited since update</dt><dd>${os.kev_since_patch?.length ? `<span class="tag kev">${os.kev_since_patch.length} OS vulnerabilities</span>` : '<span class="tag ok">none catalogued</span>'}</dd>` : '<dd class="muted">Scanning…</dd>';
   $('#os-kev').innerHTML = (os.kev_since_patch || []).slice(0, 12).map((k) => `<li>• <a href="https://nvd.nist.gov/vuln/detail/${esc(k.cve_id)}" target="_blank" rel="noopener">${esc(k.cve_id)}</a> ${esc(k.product)}: ${esc(k.name)} <span class="muted">(added ${esc(k.date_added)}${k.ransomware ? ', ransomware' : ''})</span></li>`).join('');
   const items = inv.items || [];
   const kevItems = items.filter((i) => i.kev.length);
@@ -797,7 +797,7 @@ function renderInventory() {
   renderCards('inv-cards', [
     { key: 'all', label: 'all', n: all.length, sub: 'apps, services, programs' },
     { key: 'app', group: 'kind', label: 'apps', n: n((i) => i.kind === 'app'), sub: 'network-active', color: C.s1 },
-    { key: 'service', group: 'kind', label: 'services', n: n((i) => i.kind === 'service'), sub: 'Windows services' },
+    { key: 'service', group: 'kind', label: 'services', n: n((i) => i.kind === 'service'), sub: 'services' },
     { key: 'program', group: 'kind', label: 'programs', n: n((i) => i.kind === 'program'), sub: 'installed software' },
     { key: 'kev', label: 'exploited', n: n((i) => i.kev.length), sub: 'in CISA KEV', color: C.serious },
     { key: 'unpatched', label: 'likely unpatched', n: n(unpatched), sub: 'binary older than the fix', color: C.critical },
@@ -1107,9 +1107,9 @@ async function loadSettings() {
   $('#update-reasons').innerHTML = (intel.update?.reasons || []).map((r) => `<li>• ${esc(r)}</li>`).join('');
   $('#intel-summary').innerHTML = `<dt>Malicious IPs</dt><dd>${intel.ips.toLocaleString()} addresses + ${intel.cidrs.toLocaleString()} ranges</dd><dt>Malicious domains</dt><dd>${intel.domains.toLocaleString()}</dd><dt>Last refresh</dt><dd>${intel.last_refresh ? dateTimeStr(intel.last_refresh) : '-'}</dd><dt>Next refresh</dt><dd>${intel.next_refresh ? dateTimeStr(intel.next_refresh) : '-'}</dd><dt>Manifest</dt><dd>${cfg.intel.manifest_url || '<span class="muted">none configured (feeds.json in data/feeds is still read)</span>'}</dd>`;
   $('#feed-table tbody').innerHTML = intel.feeds.map((f) => `<tr><td title="${esc(f.url)}">${esc(f.name)}</td><td class="mono">${esc(f.kind)}</td><td class="muted">${esc(f.source)}</td><td class="num">${f.entries.toLocaleString()}</td><td class="muted">${f.updated ? dateTimeStr(f.updated) : '-'}</td><td>${f.error ? `<span class="tag flag" title="${esc(f.error)}">${esc(f.error)}</span>` : '<span class="tag sig-valid">ok</span>'}</td></tr>`).join('');
-  $('#block-table tbody').innerHTML = blocks.map((b) => `<tr><td>${esc(b.kind)}</td><td class="mono">${esc(b.target)}</td><td class="muted">${dateTimeStr(b.ts)}</td><td>${b.present ? '<span class="tag ok">in firewall</span>' : '<span class="tag kev" title="The rule is recorded here but no longer exists in Windows Firewall (removed by hand?)">missing</span>'}</td><td><button class="btn sm unblock" data-rule="${esc(b.rule)}">${b.present ? 'allow again' : 'forget'}</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No blocks</td></tr>';
+  $('#block-table tbody').innerHTML = blocks.map((b) => `<tr><td>${esc(b.kind)}</td><td class="mono">${esc(b.target)}</td><td class="muted">${dateTimeStr(b.ts)}</td><td>${b.present ? '<span class="tag ok">in firewall</span>' : '<span class="tag kev" title="The rule is recorded here but no longer exists in the firewall (removed by hand?)">missing</span>'}</td><td><button class="btn sm unblock" data-rule="${esc(b.rule)}">${b.present ? 'allow again' : 'forget'}</button></td></tr>`).join('') || '<tr><td colspan="4" class="empty">No blocks</td></tr>';
   $$('#block-table .unblock').forEach((b) => b.addEventListener('click', async () => { const r = await post('/api/action/unblock', { rule: b.dataset.rule }); toast(r.ok ? 'Rule removed' : 'Failed', r.ok ? b.dataset.rule : r.error, r.ok ? 'sev-ok' : 'sev-high'); loadSettings(); }));
-  $('#capture-status').innerHTML = `<dt>Administrator</dt><dd>${ov.is_admin ? 'yes' : 'no - restart as administrator for full visibility'}</dd><dt>ETW capture</dt><dd>${ov.etw_active ? `active, ${ov.etw_events.toLocaleString()} events` : esc(ov.etw_error || 'inactive')}</dd><dt>GeoIP database</dt><dd>${ov.geo_available ? 'loaded' : 'missing'}</dd><dt>Home location</dt><dd>${S.home?.label || 'unknown'}</dd><dt>Started</dt><dd>${dateTimeStr(ov.started)}</dd><dt>Project folder</dt><dd class="mono">${esc(cfg.root)}</dd>`;
+  $('#capture-status').innerHTML = `<dt>Administrator / root</dt><dd>${ov.is_admin ? 'yes' : 'no - restart as administrator (root) for full visibility'}</dd><dt>Capture (${esc(ov.capture_backend || 'etw')})</dt><dd>${ov.etw_active ? `active, ${ov.etw_events.toLocaleString()} events${ov.dns_capture ? '' : ', no DNS capture on this platform'}` : esc(ov.etw_error || 'inactive')}</dd><dt>GeoIP database</dt><dd>${ov.geo_available ? 'loaded' : 'missing'}</dd><dt>Home location</dt><dd>${S.home?.label || 'unknown'}</dd><dt>Started</dt><dd>${dateTimeStr(ov.started)}</dd><dt>Project folder</dt><dd class="mono">${esc(cfg.root)}</dd>`;
   $('#config-dump').textContent = JSON.stringify(cfg, null, 2);
   $('#hosts-issues').innerHTML = (intel.hosts_issues || []).map((h) => `<li>⚠ ${esc(h)}</li>`).join('') || '<li>No suspicious entries in the hosts file.</li>';
 }
@@ -1153,7 +1153,7 @@ async function killPid(pid) {
 async function blockPid(pid) {
   const p = S.procs.find((x) => x.pid === pid);
   if (!p?.exe) return toast('No executable path known for this process', '', 'sev-high');
-  if (!confirm(`Block ${p.exe} in Windows Firewall (in and out)?`)) return;
+  if (!confirm(`Block ${p.exe} in the firewall (in and out)?`)) return;
   const r = await post('/api/action/block-exe', { pid, exe: p.exe });
   toast(r.ok ? 'Firewall rule added' : 'Could not add rule', r.ok ? r.message : r.error, r.ok ? 'sev-ok' : 'sev-high');
   if (S.drawerPid === pid) renderDrawer();

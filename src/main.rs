@@ -9,17 +9,17 @@ async fn main() -> anyhow::Result<()> {
     let no_elevate = args.iter().any(|a| a == "--no-elevate");
     let admin = sherwatch::is_admin();
     if !admin && !no_elevate {
-        println!("SherWatch needs administrator rights for per-process traffic capture. Requesting elevation...");
+        println!("SherWatch needs {} rights for full per-process traffic capture. Requesting elevation...", if cfg!(windows) { "administrator" } else { "root" });
         if sherwatch::relaunch_elevated() {
             return Ok(());
         }
-        println!("Elevation was declined. Continuing with reduced visibility (no byte counts, no DNS capture).");
+        println!("Elevation was declined or unavailable. Continuing with reduced visibility: {}", sherwatch::platform::no_privilege_message());
     }
 
     let root = sherwatch::data_root();
     let running = sherwatch::start(root, admin).await?;
 
-    // Ctrl+C: stop the ETW session cleanly, then exit.
+    // Ctrl+C: stop the capture session cleanly, then exit.
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
             sherwatch::shutdown();
@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     if running.state.cfg.read().server.open_browser && !args.iter().any(|a| a == "--no-browser") {
-        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &running.url]).spawn();
+        sherwatch::platform::open_url(&running.url);
     }
     sherwatch::serve(running).await
 }

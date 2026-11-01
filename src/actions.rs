@@ -1,19 +1,9 @@
-//! Response actions: terminate a process, block an executable or IP with Windows Firewall.
+//! Response actions: terminate a process, block an executable or IP in the firewall.
+//! The rule naming and the audit / block records are shared; the firewall itself is
+//! Windows Defender Firewall (netsh), pf (macOS) or nftables / iptables (Linux), see `crate::platform`.
 
 use crate::db::DbMsg;
 use crate::state::AppState;
-use std::process::Command;
-
-fn run(cmd: &str, args: &[&str]) -> Result<String, String> {
-    let out = crate::util::quiet(Command::new(cmd).args(args).stdin(std::process::Stdio::null())).output().map_err(|e| e.to_string())?;
-    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    if out.status.success() {
-        Ok(stdout)
-    } else {
-        Err(format!("{}{}", stdout.trim(), stderr.trim()))
-    }
-}
 
 /// Record a response action in the audit log (Settings > Action log), successful or not.
 pub fn audit(state: &AppState, action: &str, target: &str, detail: serde_json::Value, result: &Result<String, String>, revert_of: Option<i64>) {
@@ -34,19 +24,16 @@ pub fn audit(state: &AppState, action: &str, target: &str, detail: serde_json::V
 }
 
 pub fn kill_process(pid: u32) -> Result<String, String> {
-    if pid <= 4 {
-        return Err("refusing to terminate a core system process".into());
-    }
-    run("taskkill", &["/PID", &pid.to_string(), "/F", "/T"]).map(|s| s.trim().to_string())
+    crate::platform::kill_process(pid)
 }
 
 /// Current rule prefix plus the one used before the project was renamed, so old rules stay manageable.
 const RULE_PREFIXES: [&str; 2] = ["SherWatch block ", "NetMonitor block "];
-fn is_our_rule(name: &str) -> bool {
+pub(crate) fn is_our_rule(name: &str) -> bool {
     RULE_PREFIXES.iter().any(|p| name.starts_with(p))
 }
 
-fn rule_name(kind: &str, target: &str) -> String {
+pub(crate) fn rule_name(kind: &str, target: &str) -> String {
     let short: String = target.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-').take(60).collect();
     format!("SherWatch block {kind} {short}")
 }
@@ -61,21 +48,10 @@ pub fn exe_rule_name(exe: &str) -> String {
     rule_name("app", &format!("{} {digest}", std::path::Path::new(exe).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default()))
 }
 
-/// Names of the SherWatch rules that actually exist in Windows Firewall right now (outbound direction;
-/// the inbound twin is created and deleted together with it).
-pub fn firewall_rules() -> std::collections::HashSet<String> {
-    let mut set = std::collections::HashSet::new();
-    if let Ok(out) = run("netsh", &["advfirewall", "firewall", "show", "rule", "name=all", "dir=out"]) {
-        for line in out.lines() {
-            if let Some(rest) = line.trim_start().strip_prefix("Rule Name:") {
-                let name = rest.trim();
-                if is_our_rule(name) {
-                    set.insert(name.to_string());
-                }
-            }
-        }
-    }
-    set
+/// Names of the SherWatch rules that actually exist in the firewall right now, or None when the
+/// firewall cannot be read without a privilege prompt (then every recorded rule is assumed present).
+pub fn firewall_rules() -> Option<std::collections::HashSet<String>> {
+    crate::platform::firewall_rules()
 }
 
 pub fn block_exe(state: &AppState, exe: &str) -> Result<String, String> {
@@ -83,12 +59,7 @@ pub fn block_exe(state: &AppState, exe: &str) -> Result<String, String> {
         return Err("executable path not found".into());
     }
     let rule = exe_rule_name(exe);
-    for dir in ["out", "in"] {
-        run(
-            "netsh",
-            &["advfirewall", "firewall", "add", "rule", &format!("name={rule}"), &format!("dir={dir}"), "action=block", &format!("program={exe}"), "enable=yes", "profile=any"],
-        )?;
-    }
+    crate::platform::firewall_block_exe(&rule, exe)?;
     state.db.send(DbMsg::Block { kind: "app".into(), target: exe.to_string(), rule: rule.clone(), ts: crate::util::now_ms() });
     Ok(rule)
 }
@@ -96,12 +67,7 @@ pub fn block_exe(state: &AppState, exe: &str) -> Result<String, String> {
 pub fn block_ip(state: &AppState, ip: &str) -> Result<String, String> {
     let parsed: std::net::IpAddr = ip.parse().map_err(|_| "invalid IP address".to_string())?;
     let rule = rule_name("ip", &parsed.to_string());
-    for dir in ["out", "in"] {
-        run(
-            "netsh",
-            &["advfirewall", "firewall", "add", "rule", &format!("name={rule}"), &format!("dir={dir}"), "action=block", &format!("remoteip={parsed}"), "enable=yes", "profile=any"],
-        )?;
-    }
+    crate::platform::firewall_block_ip(&rule, parsed)?;
     state.db.send(DbMsg::Block { kind: "ip".into(), target: parsed.to_string(), rule: rule.clone(), ts: crate::util::now_ms() });
     Ok(rule)
 }
@@ -110,7 +76,7 @@ pub fn unblock(state: &AppState, rule: &str) -> Result<String, String> {
     if !is_our_rule(rule) {
         return Err("not a SherWatch rule".into());
     }
-    let r = run("netsh", &["advfirewall", "firewall", "delete", "rule", &format!("name={rule}")]);
+    let r = crate::platform::firewall_unblock(rule);
     state.db.send(DbMsg::Unblock { rule: rule.to_string() });
     r.map(|s| s.trim().to_string())
 }

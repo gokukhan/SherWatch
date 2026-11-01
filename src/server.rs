@@ -105,7 +105,7 @@ async fn guard_local(State(s): S, req: axum::extract::Request, next: axum::middl
 async fn shutdown() -> Json<serde_json::Value> {
     tokio::spawn(async {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        crate::collectors::etw::stop();
+        crate::platform::stop_capture();
         std::process::exit(0);
     });
     Json(json!({"ok": true}))
@@ -397,14 +397,15 @@ async fn history_conns(State(s): S, Query(q): Query<HistQuery>) -> Response {
 }
 
 async fn blocks(State(s): S) -> Response {
-    // Reconcile with the firewall: a rule the user removed by hand shows as "missing".
-    let present = tokio::task::spawn_blocking(crate::actions::firewall_rules).await.unwrap_or_default();
+    // Reconcile with the firewall: a rule the user removed by hand shows as "missing". When the
+    // firewall cannot be read without a privilege prompt (unix without root) the records are trusted.
+    let present = tokio::task::spawn_blocking(crate::actions::firewall_rules).await.ok().flatten();
     match s.db.query(db::blocks).await {
         Ok(rows) => Json(
             rows.into_iter()
                 .map(|b| {
                     let mut v = serde_json::to_value(&b).unwrap();
-                    v["present"] = json!(present.contains(&b.rule));
+                    v["present"] = json!(present.as_ref().map(|p| p.contains(&b.rule)).unwrap_or(true));
                     v
                 })
                 .collect::<Vec<_>>(),

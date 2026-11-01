@@ -1,10 +1,10 @@
 //! Software inventory and vulnerability exposure.
 //!
-//! Collects, through one PowerShell query every 30 minutes:
-//!   - running Windows services with their process IDs and binaries,
-//!   - installed programs from the registry Uninstall keys,
+//! Collects every 30 minutes (the OS-specific query lives in `crate::platform`):
+//!   - running services with their process IDs and binaries,
+//!   - installed programs (registry Uninstall keys, system_profiler, dpkg / rpm / flatpak),
 //!   - product / version / company / last-write time of every executable that uses the network,
-//!   - Windows version, build and last installed update.
+//!   - OS version, build and last installed update.
 //! Matches all of it offline against CISA's Known Exploited Vulnerabilities catalogue
 //! (downloaded as a feed) and, on request, looks up CVEs for exact versions online
 //! through Shodan's free CVEDB (sends product names and versions; off by default).
@@ -82,78 +82,23 @@ pub struct InventoryItem {
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct OsInfo {
+    /// "Windows", "macOS" or "Linux".
+    pub name: String,
+    /// Product name ("Microsoft Windows 11 Home", "macOS 14.5", "Ubuntu 24.04.1 LTS").
     pub caption: String,
     pub version: String,
     pub build: String,
+    /// Update build revision on Windows, the build tag on macOS, empty on Linux (kernel in `build`).
     pub ubr: String,
     pub display_version: String,
+    /// Last installed OS update (hotfix, macOS install receipt, package-manager log).
     pub last_hotfix: Option<i64>,
     pub last_boot: Option<i64>,
     pub patch_age_days: Option<i64>,
     pub kev_since_patch: Vec<KevMatch>,
 }
 
-#[derive(Deserialize, Default)]
-struct PsOut {
-    #[serde(default)]
-    services: Vec<PsService>,
-    #[serde(default)]
-    programs: Vec<PsProgram>,
-    #[serde(default)]
-    files: Vec<PsFile>,
-    #[serde(default)]
-    os: Option<PsOs>,
-}
-#[derive(Deserialize)]
-struct PsService {
-    #[serde(rename = "Name", default)]
-    name: Option<String>,
-    #[serde(rename = "DisplayName", default)]
-    display: Option<String>,
-    #[serde(rename = "ProcessId", default)]
-    pid: Option<u32>,
-    #[serde(rename = "PathName", default)]
-    path: Option<String>,
-}
-#[derive(Deserialize)]
-struct PsProgram {
-    #[serde(rename = "DisplayName", default)]
-    name: Option<String>,
-    #[serde(rename = "DisplayVersion", default)]
-    version: Option<String>,
-    #[serde(rename = "Publisher", default)]
-    publisher: Option<String>,
-}
-#[derive(Deserialize)]
-struct PsFile {
-    #[serde(rename = "Path", default)]
-    path: Option<String>,
-    #[serde(rename = "Product", default)]
-    product: Option<String>,
-    #[serde(rename = "Version", default)]
-    version: Option<String>,
-    #[serde(rename = "Company", default)]
-    company: Option<String>,
-    #[serde(rename = "Mtime", default)]
-    mtime: Option<String>,
-}
-#[derive(Deserialize)]
-struct PsOs {
-    #[serde(rename = "Caption", default)]
-    caption: Option<String>,
-    #[serde(rename = "Version", default)]
-    version: Option<String>,
-    #[serde(rename = "Build", default)]
-    build: Option<String>,
-    #[serde(rename = "UBR", default)]
-    ubr: serde_json::Value,
-    #[serde(rename = "DisplayVersion", default)]
-    display_version: Option<String>,
-    #[serde(rename = "LastHotfix", default)]
-    last_hotfix: Option<String>,
-    #[serde(rename = "LastBoot", default)]
-    last_boot: Option<String>,
-}
+type RawFile = crate::platform::RawFile;
 
 /// Executable path out of a service command line.
 pub fn exe_from_command(cmd: &str) -> String {
@@ -184,9 +129,10 @@ fn tokens(s: &str) -> HashSet<String> {
 
 const GENERIC_PRODUCTS: &[&str] = &["multiple products", "firmware", "routers", "router", "multiple", "products", "os", "kernel", "server", "software"];
 
+/// A KEV entry about the operating system this build runs on (matched against the patch date, not
+/// against installed software).
 fn is_os_entry(k: &KevEntry) -> bool {
-    let p = k.product.to_ascii_lowercase();
-    k.vendor.eq_ignore_ascii_case("microsoft") && (p.starts_with("windows") || p == "win32k" || p == "internet explorer" || p == "mshtml" || p.contains("print spooler") || p.contains("smb"))
+    crate::platform::is_os_kev_entry(&k.vendor, &k.product)
 }
 
 fn match_kev(item: &InventoryItem, kev: &[KevEntry]) -> Vec<KevMatch> {
@@ -256,31 +202,6 @@ fn match_kev(item: &InventoryItem, kev: &[KevEntry]) -> Vec<KevMatch> {
     out
 }
 
-fn ps_json(state: &AppState, script: &str) -> Option<serde_json::Value> {
-    // The query is long and multi-line, so it runs from a file rather than the command line.
-    let dir = state.root.join("data").join("logs");
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join("inventory-query.ps1");
-    std::fs::write(&path, script).ok()?;
-    let out = crate::util::quiet(
-        std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", &path.display().to_string()])
-            .stdin(std::process::Stdio::null()),
-    )
-    .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let text = text.trim_start_matches('\u{feff}');
-    match serde_json::from_str(text.trim()) {
-        Ok(v) => Some(v),
-        Err(e) => {
-            let err = String::from_utf8_lossy(&out.stderr);
-            tracing::warn!("inventory query returned no JSON ({e}); stdout {} bytes; stderr: {}", text.len(), crate::util::truncate(err.trim(), 600));
-            None
-        }
-    }
-}
-
 /// One collection pass. Runs on a blocking thread.
 pub fn collect(state: &AppState) {
     {
@@ -293,31 +214,11 @@ pub fn collect(state: &AppState) {
         v.dedup();
         v
     };
-    let list = exe_paths.iter().map(|p| format!("'{}'", p.replace('\'', "''"))).collect::<Vec<_>>().join(",");
-    let script = format!(r#"
-$ErrorActionPreference='SilentlyContinue'
-$svc = Get-CimInstance Win32_Service | Where-Object {{ $_.ProcessId -gt 0 -or $_.State -eq 'Running' }} | Select-Object Name, DisplayName, ProcessId, PathName
-$prog = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object {{ $_.DisplayName -and -not $_.SystemComponent }} | Select-Object DisplayName, DisplayVersion, Publisher
-$paths = @({list}) + @($svc | ForEach-Object {{ $_.PathName }} | Where-Object {{ $_ }} | ForEach-Object {{ if ($_.StartsWith('"')) {{ $_.Split('"')[1] }} elseif ($_ -match '^(.*?\.exe)') {{ $matches[1] }} else {{ $_.Split(' ')[0] }} }})
-$files = $paths | Sort-Object -Unique | ForEach-Object {{ $f = Get-Item -LiteralPath $_; if ($f) {{ [pscustomobject]@{{ Path=$_; Product=$f.VersionInfo.ProductName; Version=$(if ($f.VersionInfo.ProductVersion) {{ $f.VersionInfo.ProductVersion }} else {{ $f.VersionInfo.FileVersion }}); Company=$f.VersionInfo.CompanyName; Mtime=$f.LastWriteTimeUtc.ToString('o') }} }} }}
-$o = Get-CimInstance Win32_OperatingSystem
-$nt = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
-$hf = Get-HotFix | Where-Object {{ $_.InstalledOn }} | Sort-Object InstalledOn | Select-Object -Last 1
-$os = [pscustomobject]@{{ Caption=$o.Caption; Version=$o.Version; Build=$o.BuildNumber; UBR=$nt.UBR; DisplayVersion=$nt.DisplayVersion; LastBoot=$o.LastBootUpTime.ToUniversalTime().ToString('o'); LastHotfix=$(if ($hf) {{ $hf.InstalledOn.ToUniversalTime().ToString('o') }} else {{ $null }}) }}
-[pscustomobject]@{{ services=@($svc); programs=@($prog); files=@($files); os=$os }} | ConvertTo-Json -Depth 4 -Compress
-"#);
-    let parsed: PsOut = match ps_json(state, &script).map(serde_json::from_value::<PsOut>) {
-        Some(Ok(p)) => p,
-        Some(Err(e)) => {
-            tracing::warn!("inventory JSON did not match the expected shape: {e}");
-            PsOut::default()
-        }
-        None => PsOut::default(),
-    };
+    let parsed = crate::platform::collect_inventory(state, &exe_paths);
     let kev = state.intel.kev_entries();
     let now = crate::util::now_ms();
 
-    let files: HashMap<String, &PsFile> = parsed.files.iter().filter(|f| f.path.is_some()).map(|f| (f.path.clone().unwrap_or_default().to_ascii_lowercase(), f)).collect();
+    let files: HashMap<String, &RawFile> = parsed.files.iter().filter(|f| f.path.is_some()).map(|f| (f.path.clone().unwrap_or_default().to_ascii_lowercase(), f)).collect();
     let mut items: HashMap<String, InventoryItem> = HashMap::new();
     let mut pid_services: HashMap<u32, Vec<String>> = HashMap::new();
 
@@ -414,12 +315,12 @@ $os = [pscustomobject]@{{ Caption=$o.Caption; Version=$o.Version; Build=$o.Build
     }
 
     // OS
-    let mut os = OsInfo::default();
+    let mut os = OsInfo { name: crate::platform::OS_NAME.into(), ..Default::default() };
     if let Some(o) = parsed.os {
         os.caption = o.caption.unwrap_or_default();
         os.version = o.version.unwrap_or_default();
         os.build = o.build.unwrap_or_default();
-        os.ubr = match o.ubr { serde_json::Value::Number(n) => n.to_string(), serde_json::Value::String(s) => s, _ => String::new() };
+        os.ubr = o.ubr;
         os.display_version = o.display_version.unwrap_or_default();
         os.last_hotfix = o.last_hotfix.as_deref().and_then(parse_iso);
         os.last_boot = o.last_boot.as_deref().and_then(parse_iso);
@@ -499,16 +400,17 @@ fn raise_alerts(state: &AppState) {
         let since = inv.os.kev_since_patch.len();
         if age > 45 || since > 0 {
             let sev = if since > 0 && age > 30 { Severity::High } else { Severity::Medium };
+            let os_name = crate::platform::OS_NAME;
             state.push_alert_cd(
                 sev,
                 "R25-os-patch",
-                format!("Windows was last updated {age} days ago"),
+                format!("{os_name} was last updated {age} days ago"),
                 format!(
-                    "{} build {}.{} ({}). {} Windows vulnerabilities were added to CISA's exploited list since the last update.",
+                    "{} build {}.{} ({}). {} {os_name} vulnerabilities were added to CISA's exploited list since the last update.",
                     inv.os.caption, inv.os.build, inv.os.ubr, inv.os.display_version, since
                 ),
                 0,
-                "windows",
+                &os_name.to_ascii_lowercase(),
                 Some(SLOW_RULE_COOLDOWN),
             );
         }

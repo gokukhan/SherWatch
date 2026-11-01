@@ -27,11 +27,24 @@ pub struct ChatTurn {
     pub content: String,
 }
 
-const SYSTEM_PROMPT: &str = "You are the analyst assistant built into SherWatch Command Center, a Windows network security monitor running on the user's own PC. The user owns the machine and asks what things are. \
+/// The assistant's instructions, with the operating system of this build filled in.
+fn system_prompt() -> String {
+    let os = crate::platform::OS_NAME;
+    let services_hint = if cfg!(windows) {
+        "Windows services (svchost hosts services like WpnService, DiagTrack, wuauserv)"
+    } else if cfg!(target_os = "macos") {
+        "macOS daemons and agents (launchd labels, system frameworks)"
+    } else {
+        "Linux daemons (systemd units, package names)"
+    };
+    format!(
+        "You are the analyst assistant built into SherWatch Command Center, a network security monitor running on the user's own {os} computer. The user owns the machine and asks what things are. \
 Explain, in plain language, what a process, service, connection or alert is, what it is doing, why the monitor flagged it, and finish with a verdict (benign, probably benign, suspicious, or malicious) and one recommended action. \
-Use your general knowledge of well-known software, Windows services (svchost hosts services like WpnService, DiagTrack, wuauserv), cloud providers and ports freely, but never invent facts about this specific machine beyond the context given. \
-If the evidence is incomplete (for example the monitor was not running as administrator, or no bytes were captured), say so briefly. \
-Be concise: usually 4 to 8 short lines, no headings, no markdown tables. Mention rule IDs only when useful.";
+Use your general knowledge of well-known software, {services_hint}, cloud providers and ports freely, but never invent facts about this specific machine beyond the context given. \
+If the evidence is incomplete (for example the monitor was not running with administrator or root rights, or no bytes were captured), say so briefly. \
+Be concise: usually 4 to 8 short lines, no headings, no markdown tables. Mention rule IDs only when useful."
+    )
+}
 
 fn sev_str(s: Severity) -> &'static str {
     s.as_str()
@@ -43,9 +56,9 @@ fn rule_hint(rule: &str) -> &'static str {
         "R02" => "DNS query for a domain on a threat-intel blocklist",
         "R04" => "executable has no valid code signature and talks to the internet",
         "R05" => "executable runs from a user-writable folder (temp, downloads, appdata)",
-        "R06" => "living-off-the-land Windows binary with network activity",
+        "R06" => "living-off-the-land system binary with network activity",
         "R07" => "destination port is unusual for normal software",
-        "R08" => "process does its own DNS instead of using the Windows resolver",
+        "R08" => "process does its own DNS instead of using the system resolver",
         "R09" => "connects to the same host at a very regular interval (beaconing)",
         "R10" => "large upload volume",
         "R27" => "uploaded more than the file threshold while not on the approved-uploader list (possible file leaving the PC)",
@@ -62,9 +75,9 @@ fn rule_hint(rule: &str) -> &'static str {
         "R20" => "connected to a public IP with no DNS lookup",
         "R21" => "VirusTotal engines flag the file hash",
         "R22" => "unsigned program accepting incoming connections",
-        "R23" => "named like a Windows system process but runs from elsewhere",
+        "R23" => "named like a system process but runs from elsewhere",
         "R24" => "product matches CISA known-exploited vulnerabilities and the file predates the fix",
-        "R25" => "Windows updates are stale",
+        "R25" => "operating system updates are stale",
         "R26" => "published CVEs exist for this exact version",
         _ => "",
     }
@@ -86,7 +99,7 @@ pub fn context_process(state: &AppState, pid: u32) -> Option<String> {
         s.push_str(&format!("user: {}\n", p.user));
     }
     if !p.services.is_empty() {
-        s.push_str(&format!("hosts Windows services: {}\n", p.services.join(", ")));
+        s.push_str(&format!("hosts services: {}\n", p.services.join(", ")));
     }
     s.push_str(&format!(
         "signature: {:?}{}\n",
@@ -168,7 +181,9 @@ pub fn context_process(state: &AppState, pid: u32) -> Option<String> {
         s.push('\n');
     }
     if !state.etw_active.load(std::sync::atomic::Ordering::Relaxed) {
-        s.push_str("note: packet capture inactive (not administrator), byte counts and DNS are unavailable\n");
+        s.push_str("note: byte capture inactive (not administrator / root), byte counts are unavailable\n");
+    } else if !crate::platform::DNS_CAPTURE {
+        s.push_str("note: DNS queries are not captured on this platform\n");
     }
     Some(s)
 }
@@ -239,7 +254,7 @@ pub fn context_overview(state: &AppState) -> String {
     let inv = state.inventory.read();
     if !inv.os.caption.is_empty() {
         s.push_str(&format!(
-            "windows: {} build {}.{} last update {} days ago, {} exploited Windows vulns since\n",
+            "operating system: {} build {}.{} last update {} days ago, {} exploited OS vulns since\n",
             inv.os.caption,
             inv.os.build,
             inv.os.ubr,
@@ -414,7 +429,7 @@ pub async fn ask(state: Arc<AppState>, context: String, question: String, histor
     let started = std::time::Instant::now();
     let answer = match st.provider.as_str() {
         "free" => {
-            let mut all = vec![serde_json::json!({"role": "system", "content": SYSTEM_PROMPT})];
+            let mut all = vec![serde_json::json!({"role": "system", "content": system_prompt()})];
             all.extend(msgs);
             let body = serde_json::json!({"model": st.model, "messages": all, "temperature": 0.2, "private": true});
             let r = client.post(FREE_URL).header("content-type", "application/json").json(&body).send().await.map_err(|e| format!("free model request failed: {e}"))?;
@@ -430,7 +445,7 @@ pub async fn ask(state: Arc<AppState>, context: String, question: String, histor
         }
         "ollama" => {
             let base = if c.base_url.is_empty() { "http://127.0.0.1:11434".to_string() } else { c.base_url.clone() };
-            let mut all = vec![serde_json::json!({"role": "system", "content": SYSTEM_PROMPT})];
+            let mut all = vec![serde_json::json!({"role": "system", "content": system_prompt()})];
             all.extend(msgs);
             let body = serde_json::json!({"model": st.model, "messages": all, "stream": false, "think": false, "options": {"temperature": 0.2, "num_ctx": 8192}});
             let r = client.post(format!("{}/api/chat", base.trim_end_matches('/'))).json(&body).send().await.map_err(|e| format!("Ollama request failed: {e}"))?;
@@ -444,7 +459,7 @@ pub async fn ask(state: Arc<AppState>, context: String, question: String, histor
             let body = serde_json::json!({
                 "model": st.model,
                 "max_tokens": 2048,
-                "system": SYSTEM_PROMPT,
+                "system": system_prompt(),
                 "messages": msgs,
                 "output_config": {"effort": "low"},
                 "fallbacks": "default"
@@ -470,7 +485,7 @@ pub async fn ask(state: Arc<AppState>, context: String, question: String, histor
             v["content"].as_array().map(|a| a.iter().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("")).unwrap_or_default()
         }
         _ => {
-            let mut all = vec![serde_json::json!({"role": "system", "content": SYSTEM_PROMPT})];
+            let mut all = vec![serde_json::json!({"role": "system", "content": system_prompt()})];
             all.extend(msgs);
             let body = serde_json::json!({"model": st.model, "messages": all, "temperature": 0.2});
             let r = client

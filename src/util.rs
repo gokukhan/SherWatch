@@ -1,11 +1,23 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Run an external tool (PowerShell, netsh, logman, taskkill) without flashing a console window.
-/// Matters for the windowed desktop build, harmless for the console one.
+/// Matters for the windowed desktop build on Windows, a no-op elsewhere.
 pub fn quiet(cmd: &mut std::process::Command) -> &mut std::process::Command {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    cmd.creation_flags(CREATE_NO_WINDOW)
+    crate::platform::quiet(cmd)
+}
+
+/// True when a process name from the rules' lists matches the process, ignoring case and a
+/// ".exe" suffix on either side, so "onedrive" matches OneDrive.exe and "onedrive.exe" matches
+/// the OneDrive process on a Mac.
+pub fn name_matches(entry: &str, lname: &str) -> bool {
+    if entry.eq_ignore_ascii_case(lname) {
+        return true;
+    }
+    let strip = |s: &str| -> String {
+        let l = s.to_ascii_lowercase();
+        l.strip_suffix(".exe").map(str::to_string).unwrap_or(l)
+    };
+    strip(entry) == strip(lname)
 }
 
 pub fn now_ms() -> i64 {
@@ -232,27 +244,9 @@ pub fn digit_ratio(s: &str) -> f64 {
     s.chars().filter(|c| c.is_ascii_digit()).count() as f64 / s.chars().count() as f64
 }
 
-/// Flags describing where an executable lives.
+/// Flags describing where an executable lives (temp, downloads, appdata, system, program-files...).
 pub fn path_flags(exe: &str) -> Vec<String> {
-    let p = exe.replace('/', "\\").to_ascii_lowercase();
-    let mut f = vec![];
-    if p.contains("\\appdata\\local\\temp") { f.push("appdata-temp".into()); }
-    else if p.contains("\\temp\\") || p.contains("\\tmp\\") { f.push("temp".into()); }
-    else if p.contains("\\appdata\\") { f.push("appdata".into()); }
-    if p.contains("\\downloads\\") { f.push("downloads".into()); }
-    if p.contains("\\users\\public\\") { f.push("public".into()); }
-    if p.contains("\\$recycle.bin\\") || p.contains("\\recycler\\") { f.push("recycle-bin".into()); }
-    if p.contains("\\programdata\\") { f.push("programdata".into()); }
-    if p.contains("\\desktop\\") { f.push("desktop".into()); }
-    if p.starts_with("c:\\windows\\system32\\") || p.starts_with("c:\\windows\\syswow64\\") { f.push("system".into()); }
-    else if p.starts_with("c:\\windows\\") { f.push("windows".into()); }
-    if p.starts_with("c:\\program files\\") || p.starts_with("c:\\program files (x86)\\") { f.push("program-files".into()); }
-    if p.contains("\\windowsapps\\") { f.push("store-app".into()); }
-    if p.ends_with(".scr") || p.ends_with(".pif") || p.ends_with(".com") || p.ends_with(".bat") || p.ends_with(".cmd") { f.push("odd-extension".into()); }
-    let parts: Vec<&str> = p.split('\\').collect();
-    if parts.len() == 2 && !p.is_empty() { f.push("drive-root".into()); }
-    if parts.len() == 4 && parts[1] == "users" { f.push("profile-root".into()); }
-    f
+    crate::platform::path_flags(exe)
 }
 
 pub fn is_user_writable_location(flags: &[String]) -> bool {
@@ -264,28 +258,8 @@ pub fn is_user_writable_location(flags: &[String]) -> bool {
     })
 }
 
-pub const LOLBINS: &[&str] = &[
-    "certutil.exe", "mshta.exe", "rundll32.exe", "regsvr32.exe", "msbuild.exe", "installutil.exe",
-    "cmstp.exe", "bitsadmin.exe", "wscript.exe", "cscript.exe", "regasm.exe", "regsvcs.exe",
-    "msiexec.exe", "wmic.exe", "hh.exe", "ieexec.exe", "presentationhost.exe", "forfiles.exe",
-    "pcalua.exe", "scriptrunner.exe", "esentutl.exe", "expand.exe", "extrac32.exe", "findstr.exe",
-    "makecab.exe", "xwizard.exe", "desktopimgdownldr.exe", "diantz.exe", "finger.exe", "ftp.exe",
-    "tftp.exe", "mavinject.exe", "odbcconf.exe", "wab.exe", "at.exe", "schtasks.exe", "sc.exe",
-];
-
-pub const SCRIPT_HOSTS: &[&str] = &[
-    "powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe", "python.exe", "pythonw.exe", "node.exe",
-];
-
-pub const OFFICE_APPS: &[&str] = &[
-    "winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe", "msaccess.exe", "onenote.exe", "visio.exe", "acrord32.exe", "acrobat.exe",
-];
-
-pub const SYSTEM_NAMES: &[&str] = &[
-    "svchost.exe", "lsass.exe", "csrss.exe", "winlogon.exe", "services.exe", "smss.exe", "wininit.exe",
-    "explorer.exe", "spoolsv.exe", "dwm.exe", "taskhostw.exe", "runtimebroker.exe", "sihost.exe", "dllhost.exe",
-    "conhost.exe", "searchindexer.exe", "wuauclt.exe", "msmpeng.exe",
-];
+// Process-name lists used by the rules; each platform has its own set (see src/platform/).
+pub use crate::platform::{LOLBINS, OFFICE_APPS, SCRIPT_HOSTS, SYSTEM_NAMES};
 
 pub fn truncate(s: &str, n: usize) -> String {
     if s.chars().count() <= n { s.to_string() } else { s.chars().take(n).collect::<String>() + "..." }
@@ -304,4 +278,46 @@ pub fn version_newer(candidate: &str, current: &str) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_matching_ignores_exe_suffix_and_case() {
+        assert!(name_matches("onedrive.exe", "onedrive.exe"));
+        assert!(name_matches("OneDrive", "onedrive.exe"));
+        assert!(name_matches("onedrive.exe", "onedrive"));
+        assert!(!name_matches("onedrive.exe", "onedrivesetup.exe"));
+    }
+
+    #[test]
+    fn user_writable_flags() {
+        assert!(is_user_writable_location(&["downloads".to_string()]));
+        assert!(!is_user_writable_location(&["system".to_string(), "program-files".to_string()]));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_path_flags() {
+        assert_eq!(path_flags("C:\\Windows\\System32\\svchost.exe"), vec!["system"]);
+        assert_eq!(path_flags("C:\\Users\\x\\AppData\\Local\\Temp\\a.exe"), vec!["appdata-temp"]);
+        assert!(path_flags("C:\\Users\\x\\Downloads\\a.exe").contains(&"downloads".to_string()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_path_flags() {
+        assert_eq!(path_flags("/usr/bin/curl"), vec!["system"]);
+        assert_eq!(path_flags("/Applications/Safari.app/Contents/MacOS/Safari"), vec!["program-files"]);
+        assert!(path_flags("/tmp/x/payload").contains(&"temp".to_string()));
+        assert!(path_flags("/home/u/Downloads/app").contains(&"downloads".to_string()));
+    }
+
+    #[test]
+    fn versions() {
+        assert!(version_newer("0.3.1", "0.3.0"));
+        assert!(!version_newer("v0.3.0", "0.3.0"));
+    }
 }

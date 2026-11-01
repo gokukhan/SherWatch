@@ -62,9 +62,8 @@ const SUSPICIOUS_PORTS: &[(u16, &str, Severity)] = &[
     (22, "SSH", Severity::Low),
 ];
 
-const MAIL_CLIENTS: &[&str] = &["outlook.exe", "thunderbird.exe", "olk.exe", "hxoutlook.exe", "mailspring.exe", "em client.exe"];
-const BROWSERS: &[&str] = &["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe", "iexplore.exe", "msedgewebview2.exe", "chromium.exe"];
-const DNS_SERVICES: &[&str] = &["svchost.exe", "system", "dnscache", "nscd", "unbound.exe", "dnscrypt-proxy.exe", "cloudflared.exe", "adguard.exe", "adguardsvc.exe", "pihole", "nextdns.exe", "nextdnsservice.exe", "acrylic", "simpledns", "dnsproxy.exe", "mullvad-daemon.exe", "warp-svc.exe"];
+// Process-name lists are per platform (Windows names carry ".exe", unix names do not).
+use crate::platform::{BROWSERS, DNS_SERVICES, MAIL_CLIENTS, RDP_CLIENTS, SSH_CLIENTS};
 
 struct ProcSnap {
     pid: u32,
@@ -203,7 +202,7 @@ fn run_rules(state: &AppState) {
                 Severity::High,
                 "R06-lolbin",
                 format!("Living-off-the-land binary {label} is using the network"),
-                format!("{} is a Windows tool often abused to download or run payloads. It connected to {where_}.", p.exe),
+                format!("{} is a system tool often abused to download or run payloads. It connected to {where_}.", p.exe),
                 p.pid,
                 &remote,
             );
@@ -212,8 +211,8 @@ fn run_rules(state: &AppState) {
         // R07 suspicious destination port
         if let Some((_, svc, sev)) = SUSPICIOUS_PORTS.iter().find(|(port, _, _)| *port == c.remote_port) {
             let mail_ok = (c.remote_port == 25 || c.remote_port == 587) && MAIL_CLIENTS.contains(&p.lname.as_str());
-            let ssh_ok = c.remote_port == 22 && matches!(p.lname.as_str(), "ssh.exe" | "putty.exe" | "winscp.exe" | "git.exe" | "code.exe" | "kitty.exe" | "mobaxterm.exe");
-            let rdp_ok = c.remote_port == 3389 && p.lname == "mstsc.exe";
+            let ssh_ok = c.remote_port == 22 && SSH_CLIENTS.contains(&p.lname.as_str());
+            let rdp_ok = c.remote_port == 3389 && RDP_CLIENTS.contains(&p.lname.as_str());
             let vendor_ok = (c.remote_port == 5938 && p.lname.contains("teamviewer")) || (c.remote_port == 5900 && p.lname.contains("vnc"));
             if !mail_ok && !ssh_ok && !rdp_ok && !vendor_ok {
                 state.push_alert(
@@ -233,7 +232,7 @@ fn run_rules(state: &AppState) {
                 Severity::Medium,
                 "R08-direct-dns",
                 format!("{label} is doing its own DNS to {}", c.remote_addr),
-                format!("Port {} traffic to {where_} bypasses the Windows resolver, which hides the names it looks up.", c.remote_port),
+                format!("Port {} traffic to {where_} bypasses the system resolver, which hides the names it looks up.", c.remote_port),
                 p.pid,
                 &remote,
             );
@@ -265,8 +264,8 @@ fn run_rules(state: &AppState) {
             );
         }
 
-        // R20 hard-coded IP: unsigned process, public IP, no DNS query seen (needs ETW DNS capture)
-        if etw && !trusted && uptime > 120_000 && c.hostname.is_none() && !state.dns_seen_ips.contains(&c.remote_addr)
+        // R20 hard-coded IP: unsigned process, public IP, no DNS query seen (needs DNS capture, Windows only)
+        if etw && crate::platform::DNS_CAPTURE && !trusted && uptime > 120_000 && c.hostname.is_none() && !state.dns_seen_ips.contains(&c.remote_addr)
             && matches!(p.sig, SigStatus::NotSigned | SigStatus::Invalid) && now - c.first_seen > 5_000
         {
             state.push_alert(
@@ -289,8 +288,8 @@ fn run_rules(state: &AppState) {
             state.push_alert(
                 Severity::Critical,
                 "R23-masquerade",
-                format!("{label} is impersonating a Windows system process"),
-                format!("A process named {} is running from {} instead of C:\\Windows and connected to {where_}.", p.name, p.exe),
+                format!("{label} is impersonating a system process"),
+                format!("A process named {} is running from {} instead of a system directory and connected to {where_}.", p.name, p.exe),
                 p.pid,
                 "",
             );
@@ -326,7 +325,7 @@ fn run_rules(state: &AppState) {
 
         // R27 file leaving this PC: any upload above the (low) file threshold by a program that is not an
         // approved uploader. Critical by design: the user wants to know about every transfer out.
-        let approved = cfg.approved_uploaders.iter().any(|a| a.eq_ignore_ascii_case(&p.lname));
+        let approved = cfg.approved_uploaders.iter().any(|a| util::name_matches(a, &p.lname));
         let mut r27 = false;
         if public > 0 && !approved && p.out_60 >= cfg.file_upload_bytes_per_minute {
             r27 = true;
@@ -363,7 +362,7 @@ fn run_rules(state: &AppState) {
                             Severity::Medium,
                             "R28-file-sharing-contact",
                             format!("{label} connected to file-sharing service {host}"),
-                            format!("{} is talking to {host}. Without administrator rights the upload size cannot be measured, so this may be a page view or a transfer. Run SherWatch as administrator to tell them apart.", p.exe),
+                            format!("{} is talking to {host}. Without byte capture the upload size cannot be measured, so this may be a page view or a transfer. Run SherWatch with administrator (root) rights to tell them apart.", p.exe),
                             p.pid,
                             host,
                         );
@@ -568,7 +567,7 @@ fn run_rules(state: &AppState) {
 }
 
 fn check_hosts_file(state: &AppState) {
-    let path = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into()) + "\\System32\\drivers\\etc\\hosts";
+    let path = crate::platform::hosts_file_path();
     let Ok(body) = std::fs::read_to_string(&path) else { return };
     let mut issues = vec![];
     for line in body.lines() {

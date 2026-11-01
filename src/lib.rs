@@ -14,6 +14,7 @@ pub mod geo;
 pub mod intel;
 pub mod inventory;
 pub mod model;
+pub mod platform;
 pub mod server;
 pub mod state;
 pub mod util;
@@ -27,8 +28,9 @@ pub use intel::APP_VERSION;
 /// The default configuration shipped with the app, written to a fresh data folder on first start.
 pub const DEFAULT_CONFIG: &str = include_str!("../config.toml");
 
+/// Administrator on Windows, root on macOS and Linux.
 pub fn is_admin() -> bool {
-    unsafe { windows::Win32::UI::Shell::IsUserAnAdmin().as_bool() }
+    platform::is_admin()
 }
 
 /// Prefer the folder that holds config.toml: the exe's folder, its parents (target/release), or cwd.
@@ -50,14 +52,15 @@ pub fn project_root() -> Option<PathBuf> {
     candidates.into_iter().find(|c| c.join("config.toml").exists())
 }
 
-/// Root folder for an installed copy that has no config.toml next to it: `%LOCALAPPDATA%\SherWatch`,
-/// created with the default config on first use. Development checkouts keep using the project folder.
+/// Root folder for an installed copy that has no config.toml next to it: `%LOCALAPPDATA%\SherWatch`
+/// on Windows, `~/Library/Application Support/SherWatch` on macOS, `$XDG_DATA_HOME/SherWatch` (or
+/// `~/.local/share/SherWatch`) on Linux, created with the default config on first use.
+/// Development checkouts keep using the project folder.
 pub fn data_root() -> PathBuf {
     if let Some(r) = project_root() {
         return r;
     }
-    let base = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
+    let base = platform::default_data_base()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
     let root = base.join("SherWatch");
     // Data folder from before the rename.
@@ -73,29 +76,11 @@ pub fn data_root() -> PathBuf {
     root
 }
 
-/// Re-launch the current executable with the same arguments through a UAC prompt.
+/// Re-launch the current executable with the same arguments with elevated rights: a UAC prompt on
+/// Windows, `sudo -E` on macOS and Linux when a terminal is attached. Returns true when the elevated
+/// copy ran (the caller exits); false when it could not or the user declined (the caller continues).
 pub fn relaunch_elevated() -> bool {
-    let Ok(exe) = std::env::current_exe() else { return false };
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let arg_list = if args.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " -ArgumentList @({})",
-            args.iter().map(|a| format!("'{}'", a.replace('\'', "''"))).collect::<Vec<_>>().join(",")
-        )
-    };
-    let cwd = std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default();
-    let script = format!(
-        "Start-Process -FilePath '{}' -WorkingDirectory '{}' -Verb RunAs{}",
-        exe.display().to_string().replace('\'', "''"),
-        cwd.replace('\'', "''"),
-        arg_list
-    );
-    util::quiet(std::process::Command::new("powershell").args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script]))
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    platform::relaunch_elevated()
 }
 
 /// Console logging, or file logging for the windowed desktop build (which has no console).
@@ -147,7 +132,7 @@ pub struct Running {
 /// Start everything except the HTTP accept loop. Must be called from inside a Tokio runtime.
 pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
     let cfg = config::load(&root.join("config.toml"));
-    tracing::info!("SherWatch Command Center v{} starting in {}", APP_VERSION, root.display());
+    tracing::info!("SherWatch Command Center v{} starting in {} ({})", APP_VERSION, root.display(), platform::OS_NAME);
     tracing::info!("administrator: {admin}");
 
     // Database from before the rename: carry history over (the app is not running yet, so the WAL files move too).
@@ -175,11 +160,8 @@ pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
     collectors::procinfo::start_signature_worker(state.clone(), sig_rx);
     collectors::procinfo::start_rdns_worker(state.clone(), rdns_rx);
     collectors::conntable::start(state.clone());
-    if admin {
-        collectors::etw::start(state.clone());
-    } else {
-        *state.etw_error.write() = Some("Not running as administrator: byte counts and DNS capture are unavailable.".into());
-    }
+    // Per-process byte counts (and DNS on Windows): ETW, nettop or ss depending on the platform.
+    platform::start_capture(state.clone(), admin);
     collectors::vt::start(state.clone());
     analysis::start(state.clone());
     inventory::start(state.clone());
@@ -307,8 +289,8 @@ pub async fn serve(r: Running) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Stop the kernel trace session cleanly. Call before exiting.
+/// Stop the capture session cleanly. Call before exiting.
 pub fn shutdown() {
     tracing::info!("shutting down");
-    collectors::etw::stop();
+    platform::stop_capture();
 }

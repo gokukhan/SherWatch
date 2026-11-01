@@ -186,7 +186,9 @@ fn d_cooldown() -> u64 { 10 }
 fn d_exfil_min() -> u64 { 25 * 1024 * 1024 }
 fn d_exfil_5() -> u64 { 200 * 1024 * 1024 }
 fn d_many() -> usize { 100 }
-fn d_approved() -> Vec<String> { vec!["onedrive.exe".into()] }
+/// Platform default: OneDrive on Windows, the usual sync clients elsewhere. Names are compared
+/// without the ".exe" suffix (see `util::name_matches`), so the shipped config.toml works everywhere.
+fn d_approved() -> Vec<String> { crate::platform::DEFAULT_APPROVED_UPLOADERS.iter().map(|s| s.to_string()).collect() }
 fn d_file_upload() -> u64 { 5 * 1024 * 1024 }
 fn d_sharing_min() -> u64 { 256 * 1024 }
 fn d_sharing_domains() -> Vec<String> {
