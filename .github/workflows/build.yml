@@ -13,10 +13,10 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+    branches: [master, main]
   workflow_dispatch:
 
 concurrency:
@@ -145,7 +145,7 @@ jobs:
           releaseBody: |
             SherWatch Command Center v__VERSION__ — per-process network monitoring and threat analysis.
 
-            See the [User Guide](https://github.com/gokukhan/SherWatch/blob/main/docs/USER-GUIDE.md) for installation and first steps.
+            See the [User Guide](https://github.com/gokukhan/SherWatch/blob/master/docs/USER-GUIDE.md) for installation and first steps.
 
             **Downloads**
             - Windows 10/11 (x64): `SherWatch_<version>_x64-setup.exe` (NSIS installer, installs the WebView2 runtime if missing)
