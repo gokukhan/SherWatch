@@ -87,6 +87,8 @@ fn run_rules(state: &AppState) {
     let now = now_ms();
     let cfg = &state.cfg.analysis;
     let uptime = now - state.started;
+    // The monitor itself: unsigned development builds and reverse-DNS bursts are expected from it.
+    let self_pid = std::process::id();
     let etw = state.etw_active.load(std::sync::atomic::Ordering::Relaxed);
 
     let procs: HashMap<u32, ProcSnap> = state
@@ -170,7 +172,7 @@ fn run_rules(state: &AppState) {
         // R04 unsigned / invalid signature talking to the internet
         // (Store apps under WindowsApps are signed at package level, not per file.)
         let store_app = p.flags.iter().any(|f| f == "store-app");
-        if !trusted && matches!(p.sig, SigStatus::NotSigned | SigStatus::Invalid) && !(store_app && p.sig == SigStatus::NotSigned) {
+        if !trusted && p.pid != self_pid && matches!(p.sig, SigStatus::NotSigned | SigStatus::Invalid) && !(store_app && p.sig == SigStatus::NotSigned) {
             let sev = if p.sig == SigStatus::Invalid || util::is_user_writable_location(&p.flags) { Severity::High } else { Severity::Medium };
             state.push_alert(
                 sev,
@@ -482,7 +484,9 @@ fn run_rules(state: &AppState) {
     for w in state.dns_windows.iter() {
         let (pid, base) = w.key().clone();
         let ev = &w.value().events;
-        if ev.is_empty() {
+        // Reverse lookups (PTR under in-addr.arpa / ip6.arpa) are long, numerous and often fail; the
+        // monitor's own reverse DNS would otherwise look exactly like a tunnel.
+        if ev.is_empty() || base.ends_with(".arpa") || base == "arpa" || pid == self_pid {
             continue;
         }
         let Some(p) = procs.get(&pid) else { continue };
