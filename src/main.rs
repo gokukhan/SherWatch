@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    if running.state.cfg.server.open_browser && !args.iter().any(|a| a == "--no-browser") {
+    if running.state.cfg.read().server.open_browser && !args.iter().any(|a| a == "--no-browser") {
         let _ = std::process::Command::new("cmd").args(["/C", "start", "", &running.url]).spawn();
     }
     sherwatch::serve(running).await

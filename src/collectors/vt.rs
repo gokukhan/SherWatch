@@ -16,7 +16,7 @@ pub fn enqueue(exe: String, sha256: String) {
 }
 
 pub fn start(state: Arc<AppState>) {
-    let key = state.cfg.virustotal.api_key.trim().to_string();
+    let key = state.cfg.read().virustotal.api_key.trim().to_string();
     if key.is_empty() {
         tracing::info!("VirusTotal lookups disabled (no API key in config.toml)");
         return;

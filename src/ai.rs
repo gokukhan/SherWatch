@@ -287,8 +287,8 @@ pub fn context_connection(state: &AppState, pid: u32, remote: &str) -> Option<St
 
 // ---------- providers ----------
 
-fn cfg(state: &AppState) -> &crate::config::AiCfg {
-    &state.cfg.ai
+fn cfg(state: &AppState) -> crate::config::AiCfg {
+    state.cfg.read().ai.clone()
 }
 
 async fn ollama_models(client: &reqwest::Client, base: &str) -> Vec<String> {

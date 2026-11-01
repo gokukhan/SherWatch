@@ -378,6 +378,12 @@ function alertItem(a, full) {
 function renderOverviewAlerts() {
   const open = S.alerts.filter((a) => !a.acked).slice(0, 8);
   $('#ov-alerts').innerHTML = open.length ? open.map((a) => alertItem(a, false)).join('') : '<li class="empty">No open alerts</li>';
+  // Click an alert: its process drawer when it has one, otherwise the Alerts view filtered to it.
+  $$('#ov-alerts li[data-id]').forEach((li) => li.addEventListener('click', () => {
+    const a = S.alerts.find((x) => x.id === +li.dataset.id);
+    if (a && +li.dataset.pid) openDrawer(+li.dataset.pid, alertHint(a));
+    else { setView('alerts'); refreshView(true); }
+  }));
 }
 function renderTicker(conns) {
   const el = $('#ticker');
@@ -983,6 +989,112 @@ async function loadHistory() {
   $('#hist-conn-table tbody').innerHTML = conns.map((c) => `<tr><td class="muted">${dateTimeStr(c.ts_start)}</td><td>${fmtAge(c.ts_end - c.ts_start)}</td><td>${esc(c.name || 'pid ' + c.pid)}</td><td class="mono">${c.intel ? '<span class="tag intel">intel</span>' : ''}${esc(c.raddr)}:${c.rport}</td><td>${esc(c.hostname || '')}</td><td>${flag(c.country)} ${esc(c.country || '')}</td><td class="num">${fmtBytes(c.bytes_out)}</td><td class="num">${fmtBytes(c.bytes_in)}</td><td class="muted">${esc(c.flags)}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">No closed connections recorded yet</td></tr>';
 }
 
+
+// ---------- settings form (schema-driven; values live in config.toml, nothing is hard-coded here) ----------
+// type: mb/kb (shown in MB/KB, stored in bytes), int, float, bool, list (one per line), csv (comma list), text, secret, select
+const SETTINGS_SCHEMA = [
+  { group: 'Files leaving this PC (R27, R28)', fields: [
+    { key: 'analysis.file_upload_bytes_per_minute', label: 'File upload threshold', type: 'mb', help: 'Upload by a non-approved program within one minute that raises a CRITICAL alert.' },
+    { key: 'analysis.approved_uploaders', label: 'Approved uploaders', type: 'list', help: 'Executable names allowed to upload freely, one per line (onedrive.exe, your backup client, video calls…).' },
+    { key: 'analysis.file_sharing_min_bytes', label: 'File-sharing upload threshold', type: 'kb', help: 'Upload on one connection to a file-sharing or paste service that raises a CRITICAL alert; smaller is treated as browsing.' },
+    { key: 'analysis.file_sharing_domains', label: 'File-sharing services', type: 'list', help: 'Domains matched by exact name or suffix, one per line. Addresses are re-resolved when you save.' },
+  ] },
+  { group: 'Volume and behaviour rules', fields: [
+    { key: 'analysis.exfil_bytes_per_minute', label: 'Exfiltration per minute (R10)', type: 'mb', help: 'Upload by any program in 60 s that raises a medium/high alert.' },
+    { key: 'analysis.exfil_bytes_per_5min', label: 'Exfiltration per 5 minutes (R10)', type: 'mb', help: 'Sustained upload over five minutes.' },
+    { key: 'analysis.many_destinations_threshold', label: 'Fan-out threshold (R17)', type: 'int', help: 'Distinct public hosts one program may contact within a minute before it looks like scanning.' },
+    { key: 'analysis.beacon_min_intervals', label: 'Beacon intervals (R09)', type: 'int', help: 'Regular contacts needed before a timer-like pattern is reported.' },
+    { key: 'analysis.beacon_max_cv', label: 'Beacon jitter tolerance (R09)', type: 'float', help: 'Coefficient of variation of the intervals; lower is stricter (0.25 = ±25 %).' },
+    { key: 'analysis.watch_countries', label: 'Watch-list countries (R16)', type: 'csv', help: 'Two-letter country codes, comma separated. Empty disables the rule.' },
+    { key: 'analysis.alert_cooldown_minutes', label: 'Alert cooldown', type: 'int', unit: 'min', help: 'Minutes before the same rule for the same program and target can raise a new alert instead of counting.' },
+    { key: 'analysis.reverse_dns', label: 'Reverse DNS lookups', type: 'bool', help: 'Resolve names for addresses that had no captured DNS query (uses your normal resolver).' },
+  ] },
+  { group: 'Threat intelligence and vulnerabilities', fields: [
+    { key: 'intel.refresh_hours', label: 'Feed refresh', type: 'int', unit: 'hours', help: 'How often the threat feeds and the KEV catalogue are downloaded again.' },
+    { key: 'intel.ipsum_min_score', label: 'IPsum minimum score', type: 'int', help: 'Number of blocklists that must list an address before IPsum counts it as malicious.' },
+    { key: 'vuln.online_lookup', label: 'Online CVE lookup', type: 'bool', help: 'Send installed product names and versions to cvedb.shodan.io every scan to find published CVEs.' },
+    { key: 'virustotal.api_key', label: 'VirusTotal API key', type: 'secret', restart: true, help: 'Optional. Unsigned executables are looked up by hash.' },
+  ] },
+  { group: 'Assistant', fields: [
+    { key: 'ai.provider', label: 'Default provider', type: 'select', options: ['free', 'ollama', 'anthropic', 'openai'], help: 'The model answering when the dropdown in the Assistant view is on Default.' },
+    { key: 'ai.model', label: 'Model', type: 'text', help: 'Model name for the chosen provider (openai-fast, gemma4:12b, claude-opus-5-5…).' },
+    { key: 'ai.base_url', label: 'Base URL', type: 'text', help: 'Endpoint for ollama or an OpenAI-compatible server; leave empty for the provider default.' },
+    { key: 'ai.api_key', label: 'API key', type: 'secret', help: 'Only needed for anthropic or openai.' },
+  ] },
+  { group: 'Location and server', fields: [
+    { key: 'geo.home_lat', label: 'Home latitude', type: 'float', help: 'Where the globe draws your end of each connection. Empty = detect from your public IP.' },
+    { key: 'geo.home_lon', label: 'Home longitude', type: 'float', help: '' },
+    { key: 'geo.detect_public_ip', label: 'Detect location from public IP', type: 'bool', help: 'Asks api.ipify.org for your public address once at start when no home coordinates are set.' },
+    { key: 'server.port', label: 'Dashboard port', type: 'int', restart: true, help: 'Local port the dashboard and API listen on.' },
+    { key: 'server.open_browser', label: 'Open browser at start', type: 'bool', restart: true, help: 'Browser version only; the desktop app shows its own window.' },
+  ] },
+];
+const settingsInitial = {};
+const getPath = (o, k) => k.split('.').reduce((a, p) => (a == null ? undefined : a[p]), o);
+function fieldHtml(f, v) {
+  const id = 'set-' + f.key.replace(/\./g, '-');
+  let ctl;
+  switch (f.type) {
+    case 'mb': ctl = `<input type="number" id="${id}" step="0.1" min="0.1" value="${v == null ? '' : (v / 1048576).toFixed(1).replace(/\.0$/, '')}"><span class="unit">MB</span>`; break;
+    case 'kb': ctl = `<input type="number" id="${id}" step="1" min="1" value="${v == null ? '' : Math.round(v / 1024)}"><span class="unit">KB</span>`; break;
+    case 'int': ctl = `<input type="number" id="${id}" step="1" value="${v ?? ''}">${f.unit ? `<span class="unit">${f.unit}</span>` : ''}`; break;
+    case 'float': ctl = `<input type="number" id="${id}" step="any" value="${v ?? ''}">`; break;
+    case 'bool': ctl = `<label class="chk"><input type="checkbox" id="${id}" ${v ? 'checked' : ''}> enabled</label>`; break;
+    case 'list': ctl = `<textarea id="${id}" spellcheck="false">${esc((v || []).join('\n'))}</textarea>`; break;
+    case 'csv': ctl = `<input type="text" id="${id}" value="${esc((v || []).join(', '))}">`; break;
+    case 'select': ctl = `<select id="${id}">${f.options.map((o) => `<option value="${o}" ${o === v ? 'selected' : ''}>${o}</option>`).join('')}</select>`; break;
+    case 'secret': ctl = `<input type="password" id="${id}" value="${esc(v || '')}" placeholder="${v ? '' : 'not set'}">`; break;
+    default: ctl = `<input type="text" id="${id}" value="${esc(v ?? '')}">`;
+  }
+  return `<div class="field" data-key="${f.key}"><label for="${id}">${esc(f.label)}${f.restart ? ' <span class="restart">restart</span>' : ''}<small>${esc(f.help || '')}</small></label><div class="ctl">${ctl}</div></div>`;
+}
+function renderSettingsForm(cfg) {
+  if (document.activeElement && $('#settings-form').contains(document.activeElement)) return; // do not clobber typing
+  $('#settings-form').innerHTML = SETTINGS_SCHEMA.map((g) => `<h3>${esc(g.group)}</h3>` + g.fields.map((f) => { settingsInitial[f.key] = JSON.stringify(readField(f, getPath(cfg, f.key))); return fieldHtml(f, getPath(cfg, f.key)); }).join('')).join('');
+}
+// Value as the server expects it (bytes, numbers, arrays) from either the config or the input.
+function readField(f, raw) {
+  const v = raw === undefined ? undefined : raw;
+  if (f.type === 'list' || f.type === 'csv') return (v || []).map((s) => String(s).trim()).filter(Boolean);
+  return v == null ? null : v;
+}
+function collectField(f) {
+  const el = $('#set-' + f.key.replace(/\./g, '-'));
+  if (!el) return undefined;
+  switch (f.type) {
+    case 'mb': return el.value === '' ? undefined : Math.round(parseFloat(el.value) * 1048576);
+    case 'kb': return el.value === '' ? undefined : Math.round(parseFloat(el.value) * 1024);
+    case 'int': return el.value === '' ? undefined : parseInt(el.value, 10);
+    case 'float': return el.value === '' ? (f.key.startsWith('geo.home_') ? null : undefined) : parseFloat(el.value);
+    case 'bool': return el.checked;
+    case 'list': return el.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    case 'csv': return el.value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    case 'secret': return el.value;
+    default: return el.value;
+  }
+}
+async function saveSettings() {
+  const patch = {}; let n = 0;
+  for (const g of SETTINGS_SCHEMA) for (const f of g.fields) {
+    const v = collectField(f);
+    if (v === undefined) continue;
+    if (f.type === 'secret' && v === '(set)') continue;
+    if (JSON.stringify(v) === settingsInitial[f.key] && !(f.type === 'float' && v === null && settingsInitial[f.key] !== 'null')) continue;
+    const [sec, key] = f.key.split('.');
+    (patch[sec] = patch[sec] || {})[key] = v; n++;
+  }
+  if (!n) { $('#settings-status').textContent = 'Nothing changed.'; return; }
+  $('#settings-status').textContent = 'Saving…';
+  const r = await post('/api/config', patch);
+  if (!r.ok) { $('#settings-status').textContent = ''; toast('Settings not saved', r.error, 'sev-high'); return; }
+  const restart = (r.restart_required || []).length;
+  $('#settings-status').textContent = `Saved ${r.changed.length} setting${r.changed.length === 1 ? '' : 's'}${restart ? ' · restart SherWatch to apply: ' + r.restart_required.join(', ') : ''}`;
+  toast('Settings saved', restart ? 'Some changes need a restart' : 'Applied immediately', 'sev-ok');
+  loadSettings();
+}
+$('#settings-save').addEventListener('click', saveSettings);
+$('#settings-form').addEventListener('input', (e) => { const fl = e.target.closest('.field'); if (fl) fl.classList.add('dirty'); });
+
 // ---------- settings ----------
 async function loadSettings() {
   const [intel, cfg, blocks, ov, trusted, audit] = await Promise.all([api('/api/intel'), api('/api/config'), api('/api/blocks'), api('/api/overview'), api('/api/trusted'), api('/api/audit?limit=200')]);
@@ -990,6 +1102,7 @@ async function loadSettings() {
   $('#trust-table tbody').innerHTML = trusted.map((t) => `<tr><td class="mono">${esc(t.exe)}</td><td class="mono muted">${esc((t.sha256 || '').slice(0, 16))}…</td><td><button class="btn sm untrust" data-exe="${esc(t.exe)}">revoke</button></td></tr>`).join('') || '<tr><td colspan="3" class="empty">No trusted programs</td></tr>';
   $$('#trust-table .untrust').forEach((b) => b.addEventListener('click', async () => { await post('/api/action/untrust', { exe: b.dataset.exe }); loadSettings(); }));
   S.intel = intel; S.config = cfg;
+  renderSettingsForm(cfg);
   $('#update-panel').hidden = !intel.update?.update_required;
   $('#update-reasons').innerHTML = (intel.update?.reasons || []).map((r) => `<li>• ${esc(r)}</li>`).join('');
   $('#intel-summary').innerHTML = `<dt>Malicious IPs</dt><dd>${intel.ips.toLocaleString()} addresses + ${intel.cidrs.toLocaleString()} ranges</dd><dt>Malicious domains</dt><dd>${intel.domains.toLocaleString()}</dd><dt>Last refresh</dt><dd>${intel.last_refresh ? dateTimeStr(intel.last_refresh) : '-'}</dd><dt>Next refresh</dt><dd>${intel.next_refresh ? dateTimeStr(intel.next_refresh) : '-'}</dd><dt>Manifest</dt><dd>${cfg.intel.manifest_url || '<span class="muted">none configured (feeds.json in data/feeds is still read)</span>'}</dd>`;

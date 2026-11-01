@@ -710,7 +710,7 @@ pub fn start(state: Arc<AppState>) {
         loop {
             let st = s.clone();
             let _ = tokio::task::spawn_blocking(move || collect(&st)).await;
-            if s.cfg.vuln.online_lookup {
+            if s.cfg.read().vuln.online_lookup {
                 online_lookup(s.clone()).await;
             }
             tokio::time::sleep(std::time::Duration::from_secs(30 * 60)).await;

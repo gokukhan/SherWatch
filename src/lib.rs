@@ -188,11 +188,12 @@ pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
     {
         let s = state.clone();
         tokio::spawn(async move {
-            if let (Some(lat), Some(lon)) = (s.cfg.geo.home_lat, s.cfg.geo.home_lon) {
+            let geo_cfg = s.cfg.read().geo.clone();
+            if let (Some(lat), Some(lon)) = (geo_cfg.home_lat, geo_cfg.home_lon) {
                 *s.home.write() = Some((lat, lon, "configured".into()));
                 return;
             }
-            if !s.cfg.geo.detect_public_ip {
+            if !geo_cfg.detect_public_ip {
                 return;
             }
             let client = reqwest::Client::builder().user_agent("SherWatch/0.1").timeout(std::time::Duration::from_secs(10)).build().unwrap();
@@ -231,19 +232,7 @@ pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
     {
         let s = state.clone();
         tokio::task::spawn_blocking(move || loop {
-            let domains = s.cfg.analysis.file_sharing_domains.clone();
-            let mut n = 0;
-            for d in &domains {
-                for name in [d.clone(), format!("www.{d}")] {
-                    if let Ok(addrs) = dns_lookup::lookup_host(&name) {
-                        for ip in addrs {
-                            s.sharing_ips.insert(ip, d.clone());
-                            n += 1;
-                        }
-                    }
-                }
-            }
-            tracing::info!("file-sharing services resolved: {} addresses for {} domains", n, domains.len());
+            resolve_sharing_hosts(&s);
             std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
         });
     }
@@ -263,11 +252,10 @@ pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
     {
         let s = state.clone();
         tokio::spawn(async move {
-            let hours = s.intel.refresh_hours();
-            let mut t = tokio::time::interval(std::time::Duration::from_secs(hours * 3600));
-            t.tick().await;
             loop {
-                t.tick().await;
+                // Re-read each round so a changed refresh interval applies without a restart.
+                let hours = s.intel.refresh_hours();
+                tokio::time::sleep(std::time::Duration::from_secs(hours * 3600)).await;
                 s.intel.refresh(false).await;
                 let sum = s.intel.summary();
                 if sum.update.update_required {
@@ -290,6 +278,27 @@ pub async fn start(root: PathBuf, admin: bool) -> anyhow::Result<Running> {
     let url = format!("http://{addr}/");
     tracing::info!("dashboard at {url}");
     Ok(Running { state, url, listener })
+}
+
+/// Resolve the configured file-sharing service names to addresses for R28. Safe to call again after the
+/// list changes; addresses of removed services are dropped.
+pub fn resolve_sharing_hosts(s: &state::AppState) {
+    let domains = s.cfg.read().analysis.file_sharing_domains.clone();
+    let mut fresh: Vec<(std::net::IpAddr, String)> = Vec::new();
+    for d in &domains {
+        for name in [d.clone(), format!("www.{d}")] {
+            if let Ok(addrs) = dns_lookup::lookup_host(&name) {
+                for ip in addrs {
+                    fresh.push((ip, d.clone()));
+                }
+            }
+        }
+    }
+    s.sharing_ips.clear();
+    for (ip, d) in &fresh {
+        s.sharing_ips.insert(*ip, d.clone());
+    }
+    tracing::info!("file-sharing services resolved: {} addresses for {} domains", fresh.len(), domains.len());
 }
 
 /// Run the HTTP server until the process exits.

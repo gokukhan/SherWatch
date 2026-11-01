@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SherWatch Command Center</title>
+<style>
+  :root { --bg: #0d0d0d; --surface: #1a1a19; --surface-2: #222221; --border: rgba(255,255,255,0.10); --text: #f0efec; --text-2: #c3c2b7; --muted: #898781; --accent: #3987e5; --aqua: #199e70; --critical: #d03b3b; --serious: #ec835a; --warning: #fab219; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .slide { position: relative; width: 1600px; max-width: 100%; min-height: 1000px; margin: 0 auto; padding: 56px 72px 64px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; page-break-after: always; break-after: page; }
+  .slide:last-child { border-bottom: 0; }
+  .kicker { font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 8px; }
+  h1 { font-size: 44px; margin: 0 0 12px; line-height: 1.15; }
+  h2 { font-size: 36px; margin: 0 0 18px; line-height: 1.15; }
+  h3 { font-size: 15px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+  p { margin: 0 0 10px; color: var(--text-2); max-width: 1100px; }
+  .lead { font-size: 22px; color: var(--text); max-width: 1000px; }
+  ul { margin: 0; padding-left: 20px; color: var(--text-2); }
+  li { margin: 4px 0; }
+  li b { color: var(--text); }
+  .two { display: grid; grid-template-columns: 1.3fr 1fr; gap: 36px; align-items: start; flex: 1; }
+  .two.rev { grid-template-columns: 1fr 1.3fr; }
+  .shot { width: 100%; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.55); background: #000; display: block; }
+  .shot.small { max-width: 560px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 12px; padding: 16px 18px; }
+  .card h4 { margin: 0 0 6px; font-size: 17px; }
+  .card p { font-size: 14px; margin: 0; }
+  .card.crit { border-left-color: var(--critical); } .card.warn { border-left-color: var(--warning); } .card.aqua { border-left-color: var(--aqua); } .card.ser { border-left-color: var(--serious); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; color: var(--text-2); }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: 0.8px; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); vertical-align: top; }
+  td:first-child { color: var(--text); white-space: nowrap; font-family: Consolas, ui-monospace, monospace; font-size: 13px; }
+  .sev { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.6px; }
+  .sev.c { background: rgba(208,59,59,0.3); border-color: var(--critical); } .sev.h { background: rgba(236,131,90,0.25); border-color: var(--serious); } .sev.m { background: rgba(250,178,25,0.2); border-color: var(--warning); } .sev.l { background: rgba(57,135,229,0.2); border-color: var(--accent); }
+  .foot { position: absolute; left: 72px; right: 72px; bottom: 22px; display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .ring { width: 34px; height: 34px; border-radius: 50%; border: 4px solid var(--accent); position: relative; }
+  .brand .ring::after { content: ""; position: absolute; inset: 8px; border-radius: 50%; background: var(--text); }
+  .title-slide { justify-content: center; }
+  .title-slide h1 { font-size: 72px; }
+  .title-slide .lead { font-size: 26px; }
+  .pill { display: inline-block; border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 13px; color: var(--text-2); margin: 4px 6px 0 0; background: var(--surface); }
+  .stack { display: grid; gap: 14px; }
+  code { font-family: Consolas, ui-monospace, monospace; font-size: 13px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  .arch { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .arch .card { border-left-color: var(--aqua); }
+  @media print {
+    html, body { background: var(--bg); }
+    .slide { width: 1600px; height: 1000px; min-height: 1000px; max-width: none; overflow: hidden; border-bottom: 0; }
+  }
+  @page { size: 1600px 1000px; margin: 0; }
+</style>
+</head>
+<body>
+
+<section class="slide title-slide">
+  <div class="brand"><div class="ring"></div><div class="kicker" style="margin:0">Sher Khan presents</div></div>
+  <h1>SherWatch<br>Command Center</h1>
+  <p class="lead">A Windows network security monitor that shows every program sending data out of your PC, scores it against threat intelligence and known exploits, explains what it sees in plain language, and lets you act on it in one click.</p>
+  <div><span class="pill">Rust + Tauri</span><span class="pill">Per-process capture (ETW)</span><span class="pill">28 detection rules</span><span class="pill">Threat feeds auto-updated</span><span class="pill">3D globe</span><span class="pill">Built-in AI analyst</span><span class="pill">Runs 100 % locally</span></div>
+  <div class="foot"><span>SherWatch Command Center · v0.1.0</span><span>Private build for Sher Khan · 2026</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">What it does</div>
+  <h2>Everything that leaves your PC, who sent it, and whether it should have</h2>
+  <div class="cards">
+    <div class="card"><h4>See every connection, per program</h4><p>Live table of all TCP and UDP flows with the owning process, signature, destination, hostname, country, bytes and age. Captured from the Windows kernel, not a packet sniffer.</p></div>
+    <div class="card crit"><h4>Catch what should not be happening</h4><p>28 rules: threat-feed matches, beaconing, exfiltration, DNS tunnelling, algorithm-generated domains, living-off-the-land tools, masquerading, unsigned software, suspicious locations, new listeners.</p></div>
+    <div class="card warn"><h4>Know when a file leaves</h4><p>Any program not on your approved list that uploads more than a few MB, or uploads to a file-sharing service, raises a critical alert within seconds.</p></div>
+    <div class="card aqua"><h4>Threat data that keeps itself fresh</h4><p>Feodo, Spamhaus, IPsum, Tor exits, OpenPhish, Blackbook and CISA's exploited-vulnerability catalogue refresh on a schedule. New sources arrive through a manifest; the app tells you when it needs a code update.</p></div>
+    <div class="card ser"><h4>Vulnerable software on this PC</h4><p>Installed programs and services are matched against CISA KEV and, optionally, published CVEs for the exact version, with a judgement on whether the fix is likely installed.</p></div>
+    <div class="card"><h4>Act, log, revert</h4><p>Terminate, block in Windows Firewall, trust a file by hash. Every action is written to an audit log and can be reverted from the Settings page.</p></div>
+  </div>
+  <h3>Also</h3>
+  <ul>
+    <li><b>Built-in AI analyst</b>: ask "what is this process doing?" and get an answer with the facts already attached, from a free keyless model, a local Ollama model or Claude.</li>
+    <li><b>Interactive 3D globe</b> of live destinations with per-country colouring and clickable destination cards.</li>
+    <li><b>Desktop app and browser version</b> built from the same code, with installer and tray icon.</li>
+    <li><b>Local only</b>: no account, no cloud, the dashboard answers only your own machine.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>2 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Overview</div>
+  <h2>The command center view</h2>
+  <img class="shot" src="img/overview.png" alt="Overview page with tiles, globe, latest alerts, top talkers and charts">
+  <ul style="margin-top:14px">
+    <li><b>Tiles</b>: live upload and download with sparklines, connection counts (and how many reach the internet), processes online, open alerts by severity, session totals.</li>
+    <li><b>Live destinations</b> globe, <b>latest alerts</b> (click one to open its process), <b>top talkers</b> by bytes, throughput over five minutes, destinations by country and a live connection ticker.</li>
+    <li>The status lights bottom-left show the live feed, packet capture, administrator rights and threat-intel state; hover each for what red means.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>3 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Globe</div>
+  <h2>Where your data goes, live</h2>
+  <div class="two">
+    <div class="stack">
+      <img class="shot" src="img/globe.png" alt="Full-size globe with arcs to destinations and the destination table">
+    </div>
+    <div>
+      <img class="shot" src="img/globe-popup.png" alt="Destination card listing the processes sending to a place">
+      <ul style="margin-top:14px">
+        <li>Arcs from your location to every active destination, coloured by risk; points sized by traffic; one label per city.</li>
+        <li>Countries you talk to light up; countries hosting a threat-feed match turn red.</li>
+        <li>Hover pauses the rotation. <b>Click</b> a point, city or country for the destination card: owner, intel match, bytes and every process sending there, each linking to its drawer, the assistant or the connection list.</li>
+        <li>Your home location comes from the config or is detected once from your public IP.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>SherWatch Command Center</span><span>4 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Connections</div>
+  <h2>Every live flow with its owner</h2>
+  <img class="shot" src="img/connections.png" alt="Connections table with filter cards">
+  <ul style="margin-top:14px">
+    <li>Filter cards with live counts: internet, local, TCP, UDP, threat-intel matches, risky processes. Cards combine; sort by newest, upload, download, risk or longest open. Every column header sorts.</li>
+    <li>Columns: process, PID, protocol, remote address (with an <b>intel</b> tag when a feed lists it), hostname from the DNS capture or reverse DNS, port, location and network owner, state, bytes, age, risk.</li>
+    <li>Per-row actions: open the process drawer, ✦ ask the assistant about the connection, block the address in Windows Firewall. Export as CSV.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>5 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Processes</div>
+  <h2>Who is talking, and the full story of each</h2>
+  <div class="two">
+    <div>
+      <img class="shot" src="img/processes.png" alt="Processes table with filter cards">
+      <ul style="margin-top:14px">
+        <li>Cards: running, online now, unsigned, odd location (Temp, Downloads, AppData…), risky, with alerts.</li>
+        <li>Signature status with publisher, location flags, 60-second activity sparkline, bytes, connections, DNS queries and a decaying risk score.</li>
+        <li>Buttons per row: ✦ explain, kill, block.</li>
+      </ul>
+    </div>
+    <div>
+      <img class="shot" src="img/drawer.png" alt="Process drawer with assistant answer, details, alerts and connections">
+      <ul style="margin-top:14px">
+        <li><b>Process drawer</b>: parent, user, start time, command line, signer, SHA-256 with VirusTotal link, hosted services, traffic, listening sockets, alerts, connections, DNS and repeated contacts.</li>
+        <li><b>Terminate</b>, <b>Block in firewall</b> (shows the live state and turns into "allow"), <b>Trust</b> by file hash, and <b>✦ Explain</b> with the answer and follow-up box inside the drawer.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>SherWatch Command Center</span><span>6 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Alerts</div>
+  <h2>Findings, ranked and explained</h2>
+  <img class="shot" src="img/alerts.png" alt="Alerts page with severity cards, 24-hour histogram and alert list">
+  <ul style="margin-top:14px">
+    <li>Severity cards (critical, high, medium, low, info) with open counts; click to filter, combine, or jump from the pills in the top bar.</li>
+    <li>Each alert carries a plain-language explanation of why it matters, the process, the target, the rule ID and a repeat counter; the same condition is counted, not duplicated, within the cooldown.</li>
+    <li>Acknowledge one or all, ✦ explain with the assistant, export CSV or JSON. Critical and high alerts pop up as toasts and, optionally, Windows notifications.</li>
+    <li>Alerts persist in the local database and survive restarts.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>7 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Detection</div>
+  <h2>28 rules, from reputation to behaviour</h2>
+  <table>
+    <tr><th>Rule</th><th>Sev</th><th>Looks for</th><th>Rule</th><th>Sev</th><th>Looks for</th></tr>
+    <tr><td>R01 / R02</td><td><span class="sev c">critical</span></td><td>IP or domain listed in a threat feed</td><td>R15</td><td><span class="sev h">high</span></td><td>Hosts-file hijack or blocked security vendor</td></tr>
+    <tr><td>R04</td><td><span class="sev m">medium</span></td><td>Unsigned or invalid-signature program on the internet</td><td>R16</td><td><span class="sev l">low</span></td><td>Connection to a watch-list country</td></tr>
+    <tr><td>R05</td><td><span class="sev h">high</span></td><td>Network program in Temp, Downloads, Desktop, Recycle Bin…</td><td>R17</td><td><span class="sev m">medium</span></td><td>Fan-out: 100+ hosts in a minute (scan, spray, P2P)</td></tr>
+    <tr><td>R06</td><td><span class="sev h">high</span></td><td>Living-off-the-land binary (certutil, mshta, rundll32…) online</td><td>R18</td><td><span class="sev l">low</span></td><td>Session open for over six hours on an odd port</td></tr>
+    <tr><td>R07</td><td><span class="sev h">high</span></td><td>Suspicious destination port: SMB, RDP, IRC, Tor, miners, SOCKS…</td><td>R19</td><td><span class="sev h">high</span></td><td>Network child of Office, Acrobat or a script host</td></tr>
+    <tr><td>R08</td><td><span class="sev m">medium</span></td><td>Program bypassing the Windows resolver (own DNS)</td><td>R20</td><td><span class="sev m">medium</span></td><td>Unsigned program using an IP no DNS query explains</td></tr>
+    <tr><td>R09</td><td><span class="sev h">high</span></td><td>Beaconing: regular timer-like check-ins</td><td>R21</td><td><span class="sev c">critical</span></td><td>VirusTotal detections for an unsigned file</td></tr>
+    <tr><td>R10</td><td><span class="sev h">high</span></td><td>Large upload volume per minute / five minutes</td><td>R22</td><td><span class="sev h">high</span></td><td>Unsigned program accepting connections from other machines</td></tr>
+    <tr><td>R11</td><td><span class="sev h">high</span></td><td>DNS tunnelling patterns</td><td>R23</td><td><span class="sev c">critical</span></td><td>Process named like svchost, lsass… outside Windows</td></tr>
+    <tr><td>R12</td><td><span class="sev m">medium</span></td><td>Algorithm-generated domain names</td><td>R24 / R25</td><td><span class="sev h">high</span></td><td>Exploited software likely unpatched; Windows updates stale</td></tr>
+    <tr><td>R13</td><td><span class="sev l">info</span></td><td>New application on the network (first time ever)</td><td>R26</td><td><span class="sev h">high</span></td><td>Published CVEs for the exact installed version</td></tr>
+    <tr><td>R14</td><td><span class="sev h">high</span></td><td>New listening port (info for signed software)</td><td>R27 / R28</td><td><span class="sev c">critical</span></td><td>File leaving the PC; upload to a file-sharing service</td></tr>
+  </table>
+  <p style="margin-top:14px">Severities feed a per-process risk score that decays over time. Every threshold is editable on the Settings page; nothing is hard-coded. Trusting a file by hash silences the signature and location rules for that exact file only.</p>
+  <div class="foot"><span>SherWatch Command Center</span><span>8 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Files leaving the PC</div>
+  <h2>A critical alert the moment something uploads</h2>
+  <div class="cards" style="grid-template-columns: 1fr 1fr">
+    <div class="card crit"><h4>R27 · File upload by a non-approved program</h4><p>Any program not on the approved-uploader list (OneDrive by default) that sends more than the threshold (5 MB in a minute, editable) to public addresses raises a <b>critical</b> alert naming the program, the amount and what to do. Backup clients, video calls and AI coding tools will trip it until you approve them deliberately.</p></div>
+    <div class="card crit"><h4>R28 · Upload to a file-sharing service</h4><p>51 built-in services (WeTransfer, Mega, Dropbox, GoFile, transfer.sh, Pastebin, the Telegram API, Discord, S3…) matched by hostname and by address, re-resolved on a schedule. A real upload is critical; merely browsing the site stays silent. The list and threshold are editable.</p></div>
+  </div>
+  <h3>Honest limits</h3>
+  <ul>
+    <li>The monitor sees bytes, never file names or content; everything is inferred from behaviour. Traffic is encrypted and is never inspected.</li>
+    <li>Loopback traffic is excluded from all volume counts, so the dashboard itself and local dev servers cannot trigger these rules.</li>
+    <li>Files leaving by USB stick, Bluetooth, network share, printer or remote-desktop clipboard are not network traffic and are not seen.</li>
+    <li>Byte counts need administrator rights; without them R28 drops to a medium "connected to a file-sharing service" notice.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>9 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">DNS</div>
+  <h2>Every name lookup, per process</h2>
+  <img class="shot" src="img/dns.png" alt="DNS page with filter cards, chart of most queried domains and the query table">
+  <ul style="margin-top:14px">
+    <li>Queries captured from the Windows DNS client with type, status and answers; chart of the most queried domains; cards for A/AAAA, other types, failed lookups and flagged names.</li>
+    <li>Names in a threat feed carry an <b>intel</b> tag and raise a critical alert before the connection even opens. Random-looking names and tunnelling patterns are flagged by rules R11 and R12.</li>
+    <li>Answers are stitched to connections, so the connection table shows hostnames even for CDN addresses with no reverse name.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>10 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Inventory</div>
+  <h2>Installed software, services and their known exploits</h2>
+  <img class="shot" src="img/inventory.png" alt="Inventory page with apps, services and programs matched to CISA KEV">
+  <ul style="margin-top:14px">
+    <li>Network-active apps, Windows services and installed programs with version, publisher and executable, re-scanned every 30 minutes; cards for apps, services, programs, exploited, likely unpatched and with CVEs.</li>
+    <li>Matched against CISA's Known Exploited Vulnerabilities catalogue; a binary older than the likely fix date is reported as <b>likely unpatched</b>, critical when the entry is tied to ransomware and the program is online.</li>
+    <li>Optional, opt-in online lookup of published CVEs for the exact version; stale Windows updates raise their own alert.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>11 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Assistant</div>
+  <h2>An analyst that already has the facts</h2>
+  <div class="two rev">
+    <div>
+      <ul>
+        <li>Ask in plain language: "what is svchost 6400 doing?", "is cbservice.exe safe?", "which alerts matter today?", or "summarise my network".</li>
+        <li>Every ✦ button attaches the context automatically: path, signature, publisher, parent, hosted services, connections with hostnames and owners, DNS, alerts with rule meanings, vulnerability matches. Answers end with a verdict and a recommended action.</li>
+        <li>Answers appear where you are: inside the process drawer with a follow-up box, or in the Assistant view for general questions.</li>
+        <li>Choose the model from a dropdown: a free keyless online model by default, any local Ollama model to keep everything on the PC, or Claude and OpenAI-compatible endpoints with your own key.</li>
+      </ul>
+    </div>
+    <img class="shot" src="img/assistant.png" alt="Assistant view with a network summary">
+  </div>
+  <div class="foot"><span>SherWatch Command Center</span><span>12 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">History</div>
+  <h2>What happened while you were away</h2>
+  <img class="shot" src="img/history.png" alt="History page with traffic and alert charts over a selectable range">
+  <ul style="margin-top:14px">
+    <li>Traffic and alerts over 1 hour to 30 days, per-process traffic buckets, and every closed connection with its hostname, country, bytes and flags.</li>
+    <li>Stored in a local SQLite database (alerts, traffic, connections, DNS, blocks, known apps, audit log) and pruned after 30 days.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>13 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Settings and control</div>
+  <h2>Tune it, act on it, undo it</h2>
+  <img class="shot" src="img/settings.png" alt="Settings page with the editable settings form, feeds, firewall blocks and action log">
+  <ul style="margin-top:14px">
+    <li><b>Settings form</b>: every threshold and option, grouped and documented inline; validated, saved to config.toml with comments intact, and applied immediately (port and browser launch need a restart).</li>
+    <li><b>Threat feeds</b> with entry counts, last update and status, plus a refresh button. <b>Firewall blocks</b> reconciled with Windows Firewall. <b>Trusted programs</b> pinned by hash. <b>Capture status</b> and the raw configuration.</li>
+    <li><b>Action log</b>: every terminate, block, allow, trust and settings change with time, target and result, and a revert button where an action can be undone.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>14 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Under the hood</div>
+  <h2>Built for speed and a small attack surface</h2>
+  <div class="arch">
+    <div class="card"><h4>Collectors</h4><p>Kernel network trace (ETW) for per-process bytes and DNS, socket tables polled every second, process inspector with Authenticode checks and hashing, reverse DNS, optional VirusTotal.</p></div>
+    <div class="card"><h4>Analysis</h4><p>Rules run every two seconds over a snapshot: feeds, GeoIP, timing windows for beacons and fan-out, DNS windows, inventory matching every 30 minutes.</p></div>
+    <div class="card"><h4>Storage and intel</h4><p>SQLite with a batching writer; feeds and the KEV catalogue cached on disk and refreshed on a schedule; manifest-driven feed additions.</p></div>
+    <div class="card"><h4>Front ends</h4><p>One Rust library, two thin binaries: a browser version and a Tauri desktop app with tray icon, single instance and an NSIS installer. Same dashboard, no drift.</p></div>
+  </div>
+  <h3>Security design</h3>
+  <ul>
+    <li>Written in Rust; the UI is plain HTML with no framework and renders only escaped data.</li>
+    <li>The API answers only the local dashboard: Host and Origin are checked on every request, which defeats DNS rebinding and cross-site requests from other tabs.</li>
+    <li>The desktop window loads the local server like a browser tab and is granted no Tauri commands, so a rendering bug cannot reach the operating system.</li>
+    <li>External tools run without consoles; the monitor exempts only its own process from rules that its own behaviour would trip.</li>
+    <li>Nothing leaves the PC except feed downloads, the one-time public-IP lookup and the assistant requests you choose to send.</li>
+  </ul>
+  <div class="foot"><span>SherWatch Command Center</span><span>15 / 16</span></div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Getting started</div>
+  <h2>Two ways to run it</h2>
+  <div class="cards" style="grid-template-columns: 1fr 1fr">
+    <div class="card aqua"><h4>Desktop app</h4><p>Run <code>SherWatch_0.1.0_x64-setup.exe</code>. Start SherWatch from the Start menu, accept the administrator prompt, and the window opens on the Overview. Closing the window keeps it monitoring in the tray; Quit stops it.</p></div>
+    <div class="card"><h4>Browser version</h4><p>Run <code>run.cmd</code> in the project folder. The same prompt appears, the server starts and the dashboard opens at <code>http://127.0.0.1:8787/</code> in your browser.</p></div>
+  </div>
+  <h3>First minutes</h3>
+  <ul>
+    <li>The GeoIP database (about 120 MB) downloads once; threat feeds refresh in the background. Everything works meanwhile.</li>
+    <li>Administrator rights are what unlock byte counts, DNS capture and the file-exfiltration rules; without them the connection view still works.</li>
+    <li>Expect a burst of info alerts on the first run as every program you use is seen for the first time; after that only new things are reported.</li>
+    <li>When your own backup, call or AI tools trip the file-upload rule, approve them in Settings and they stay quiet.</li>
+  </ul>
+  <h3>Documentation</h3>
+  <p>User guide, detection rules, architecture, building, updating and third-party notices live in the <code>docs/</code> folder of the private repository <code>github.com/gokukhan/SherWatch</code>.</p>
+  <div class="foot"><span>SherWatch Command Center · by Sher Khan</span><span>16 / 16</span></div>
+</section>
+
+</body>
+</html>

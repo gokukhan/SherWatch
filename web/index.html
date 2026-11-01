@@ -266,6 +266,11 @@
           <p class="muted">The threat-data sources changed in a way this build cannot handle on its own. Ask Claude to update the app and mention the items below.</p>
           <ul id="update-reasons" class="plain"></ul>
         </div>
+        <div class="panel panel-settings">
+          <div class="panel-head"><h2>Settings</h2><span class="panel-sub">saved to config.toml · most changes apply immediately</span></div>
+          <form id="settings-form" class="settings-form" autocomplete="off"></form>
+          <div class="row-gap settings-actions"><button class="btn" id="settings-save" type="button">Save settings</button><span class="muted" id="settings-status"></span></div>
+        </div>
         <div class="panel">
           <div class="panel-head"><h2>Threat intelligence feeds</h2><button class="btn" id="intel-refresh">Refresh now</button></div>
           <div class="kv" id="intel-summary"></div>

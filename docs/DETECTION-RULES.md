@@ -46,7 +46,8 @@ at risk 90 or higher.
 
 ## Tuning
 
-All thresholds are in `config.toml` under `[analysis]`. Typical adjustments:
+All thresholds are in `config.toml` under `[analysis]` and editable on the Settings page of the
+dashboard (changes apply at once and are written back to the file). Typical adjustments:
 
 - Backup or sync clients: raise `exfil_bytes_per_minute` or acknowledge their R10 alerts.
 - Programs that legitimately upload (backup, cloud sync other than OneDrive, video calls,
@@ -64,6 +65,9 @@ All thresholds are in `config.toml` under `[analysis]`. Typical adjustments:
   R02, R08 (partly), R10, R11, R12, R20, R22 and R27 stay silent; R28 drops to Medium.
 - Files leaving by USB stick, Bluetooth, a network share, printing or the remote-desktop
   clipboard are not network traffic and are not seen.
+- Loopback traffic (127.0.0.1 / ::1, for example the dashboard itself or a local dev server)
+  shows on connection rows but is not counted as upload or download, so it cannot trigger the
+  volume rules R10, R27 and R28.
 - Encrypted traffic contents are never inspected; the rules work on metadata, timing, volume
   and reputation.
 - A signed binary from a reputable vendor that is itself malicious (supply chain) only shows

@@ -58,7 +58,8 @@ pub struct DnsWindow {
 }
 
 pub struct AppState {
-    pub cfg: Config,
+    /// Live configuration: edited from the Settings page and written back to config.toml.
+    pub cfg: RwLock<Config>,
     pub root: PathBuf,
     pub started: i64,
     pub is_admin: bool,
@@ -183,7 +184,7 @@ impl AppState {
             alerts.push_back(a);
         }
         Self {
-            cfg,
+            cfg: RwLock::new(cfg),
             root,
             started: now_ms(),
             is_admin,
@@ -353,7 +354,7 @@ impl AppState {
         let intel = self.intel.check_ip(&remote);
         let host = self.ip_to_host.get(&remote).map(|h| h.clone());
         let _ = &host;
-        if host.is_none() && self.cfg.analysis.reverse_dns && self.rdns_done.insert(remote) {
+        if host.is_none() && self.cfg.read().analysis.reverse_dns && self.rdns_done.insert(remote) {
             let _ = self.rdns_tx.send(remote);
         }
         (geo, intel, host, scope)
@@ -491,6 +492,12 @@ impl AppState {
             self.on_new_connection(&key);
         } else {
             self.touch_process(pid);
+        }
+        // Loopback traffic never leaves the PC (the dashboard itself, local dev servers, IPC over TCP):
+        // it stays visible on the connection row but is not counted as the process's upload/download,
+        // so the volume and file-exfiltration rules and the top-talker list only reflect real traffic.
+        if remote.ip().is_loopback() {
+            return;
         }
         if let Some(mut p) = self.procs.get_mut(&pid) {
             match dir {
@@ -667,7 +674,7 @@ impl AppState {
         let process = self.process_name(pid);
         let exe = self.process_exe(pid);
         let key = format!("{rule}|{}|{remote}", if exe.is_empty() { pid.to_string() } else { exe.to_ascii_lowercase() });
-        let cooldown_ms = cooldown.unwrap_or((self.cfg.analysis.alert_cooldown_minutes * 60_000) as i64);
+        let cooldown_ms = cooldown.unwrap_or((self.cfg.read().analysis.alert_cooldown_minutes * 60_000) as i64);
         {
             let mut cd = self.cooldown.lock();
             if let Some((first, id, last_bump)) = cd.get(&key).copied() {

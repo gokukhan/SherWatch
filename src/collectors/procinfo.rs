@@ -111,7 +111,7 @@ pub fn start_signature_worker(state: Arc<AppState>, rx: mpsc::Receiver<String>) 
                 let (sha, size) = hash_file(&exe);
                 let meta = ExeMeta { sig, signer, sha256: sha.clone(), size, vt_positives: None, vt_total: None, vt_checked: false };
                 state.apply_exe_meta(&exe, meta);
-                if let (Some(sha), false) = (sha, state.cfg.virustotal.api_key.trim().is_empty()) {
+                if let (Some(sha), false) = (sha, state.cfg.read().virustotal.api_key.trim().is_empty()) {
                     if sig != SigStatus::Valid {
                         crate::collectors::vt::enqueue(exe.clone(), sha);
                     }

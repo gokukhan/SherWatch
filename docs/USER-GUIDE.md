@@ -209,6 +209,15 @@ after 30 days.
 - **Threat intelligence feeds**: counts, last and next refresh, every feed with its
   source (config, feeds.json or manifest), entry count, last update and status.
   **Refresh now** forces a download.
+- **Settings**: every tunable the app has, grouped: the file-upload threshold and approved
+  uploaders (R27), the file-sharing threshold and service list (R28), the volume and
+  behaviour thresholds (R10, R17, R09, R16), the alert cooldown, reverse DNS, feed refresh
+  interval, IPsum score, online CVE lookup, VirusTotal key, assistant provider, model, URL
+  and key, home coordinates, port and browser launch. **Save settings** validates the values,
+  writes them to config.toml (comments kept) and applies them immediately; the few marked
+  **restart** (port, browser launch, VirusTotal key) take effect at the next start. Every save
+  is recorded in the action log. Nothing in the rules is hard-coded: the same keys can still be
+  edited in config.toml by hand.
 - **Firewall blocks**: rules the app created, each checked against Windows Firewall (**in
   firewall** or **missing** when removed by hand), with **allow again**. Block any IP by hand.
 - **Action log**: every terminate, block, allow, trust and revoke the app performed, with

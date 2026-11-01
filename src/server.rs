@@ -44,7 +44,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/inventory/cve-lookup", post(inventory_cve_lookup))
         .route("/api/intel", get(intel))
         .route("/api/intel/refresh", post(intel_refresh))
-        .route("/api/config", get(config))
+        .route("/api/config", get(config).post(config_save))
         .route("/api/history/traffic", get(history_traffic))
         .route("/api/history/alerts", get(history_alerts))
         .route("/api/history/connections", get(history_conns))
@@ -72,7 +72,8 @@ pub fn router(state: Arc<AppState>) -> Router {
 /// when a browser sends an Origin, it must be this server. This blocks DNS-rebinding and
 /// cross-site requests from other pages open in the browser.
 async fn guard_local(State(s): S, req: axum::extract::Request, next: axum::middleware::Next) -> Response {
-    let bind = s.cfg.server.bind.as_str();
+    let server_cfg = s.cfg.read().server.clone();
+    let bind = server_cfg.bind.as_str();
     let host_ok = req
         .headers()
         .get(header::HOST)
@@ -84,7 +85,7 @@ async fn guard_local(State(s): S, req: axum::extract::Request, next: axum::middl
         })
         .unwrap_or(false);
     // Origin must match scheme, host and port exactly (a prefix check would accept lookalike hosts).
-    let port = s.cfg.server.port;
+    let port = server_cfg.port;
     let allowed_origins = [
         format!("http://127.0.0.1:{port}"),
         format!("http://localhost:{port}"),
@@ -297,7 +298,7 @@ async fn inventory(State(s): S) -> Json<serde_json::Value> {
         "online_running": inv.online_running,
         "online_progress": inv.online_progress,
         "online_last": inv.online_last,
-        "online_enabled": s.cfg.vuln.online_lookup,
+        "online_enabled": s.cfg.read().vuln.online_lookup,
         "kev_count": inv.kev_count,
     }))
 }
@@ -328,12 +329,36 @@ async fn intel_refresh(State(s): S) -> Json<serde_json::Value> {
 }
 
 async fn config(State(s): S) -> Json<serde_json::Value> {
-    let mut v = serde_json::to_value(&s.cfg).unwrap();
-    v["virustotal"]["api_key"] = json!(if s.cfg.virustotal.api_key.trim().is_empty() { "" } else { "(set)" });
-    v["ai"]["api_key"] = json!(if s.cfg.ai.api_key.trim().is_empty() { "" } else { "(set)" });
+    let cfg = s.cfg.read().clone();
+    let mut v = serde_json::to_value(&cfg).unwrap();
+    v["virustotal"]["api_key"] = json!(if cfg.virustotal.api_key.trim().is_empty() { "" } else { "(set)" });
+    v["ai"]["api_key"] = json!(if cfg.ai.api_key.trim().is_empty() { "" } else { "(set)" });
     v["root"] = json!(s.root.display().to_string());
     v["app_version"] = json!(crate::intel::APP_VERSION);
     Json(v)
+}
+
+/// Save settings from the Settings page: validate, write config.toml (comments kept), apply live.
+async fn config_save(State(s): S, Json(p): Json<crate::config::ConfigPatch>) -> Json<serde_json::Value> {
+    let mut cfg = s.cfg.read().clone();
+    let (changed, restart) = match crate::config::apply_patch(&mut cfg, &p) {
+        Ok(v) => v,
+        Err(e) => return Json(json!({"ok": false, "error": e})),
+    };
+    let path = s.root.join("config.toml");
+    if let Err(e) = crate::config::write_keys(&path, &cfg, &changed) {
+        return Json(json!({"ok": false, "error": format!("could not write {}: {e}", path.display())}));
+    }
+    s.intel.set_cfg(cfg.intel.clone());
+    if let (Some(lat), Some(lon)) = (cfg.geo.home_lat, cfg.geo.home_lon) {
+        *s.home.write() = Some((lat, lon, "configured".into()));
+    }
+    *s.cfg.write() = cfg;
+    let s2 = s.clone();
+    tokio::task::spawn_blocking(move || crate::resolve_sharing_hosts(&s2));
+    let r = Ok(format!("{} setting{} saved", changed.len(), if changed.len() == 1 { "" } else { "s" }));
+    crate::actions::audit(&s, "settings", &changed.join(", "), json!({"restart_required": !restart.is_empty()}), &r, None);
+    Json(json!({"ok": true, "changed": changed, "restart_required": restart}))
 }
 
 #[derive(Deserialize)]
@@ -521,7 +546,7 @@ async fn action_untrust(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_js
 
 async fn ai_status(State(s): S, Query(q): Query<ProviderQuery>) -> Json<serde_json::Value> {
     let mut v = serde_json::to_value(crate::ai::status_for(&s, q.provider.as_deref(), q.model.as_deref()).await).unwrap();
-    v["configured"] = json!(s.cfg.ai.provider);
+    v["configured"] = json!(s.cfg.read().ai.provider.clone());
     v["choices"] = json!(crate::ai::choices(&s).await);
     Json(v)
 }

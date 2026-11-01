@@ -63,7 +63,7 @@ struct IntelData {
 }
 
 pub struct Intel {
-    cfg: IntelCfg,
+    cfg: RwLock<IntelCfg>,
     dir: PathBuf,
     data: RwLock<IntelData>,
 }
@@ -81,7 +81,12 @@ pub struct IntelSummary {
 
 impl Intel {
     pub fn new(cfg: IntelCfg, dir: PathBuf) -> Self {
-        Self { cfg, dir, data: RwLock::new(IntelData::default()) }
+        Self { cfg: RwLock::new(cfg), dir, data: RwLock::new(IntelData::default()) }
+    }
+
+    /// Replace the feed configuration (refresh interval, IPsum score) after a settings change.
+    pub fn set_cfg(&self, cfg: IntelCfg) {
+        *self.cfg.write() = cfg;
     }
 
     pub fn summary(&self) -> IntelSummary {
@@ -91,14 +96,14 @@ impl Intel {
             cidrs: d.cidrs.len(),
             domains: d.domains.len(),
             last_refresh: d.last_refresh,
-            next_refresh: d.last_refresh.map(|t| t + (self.cfg.refresh_hours * 3600 * 1000) as i64),
+            next_refresh: d.last_refresh.map(|t| t + (self.cfg.read().refresh_hours * 3600 * 1000) as i64),
             feeds: d.feeds.clone(),
             update: d.update.clone(),
         }
     }
 
     pub fn refresh_hours(&self) -> u64 {
-        self.cfg.refresh_hours.max(1)
+        self.cfg.read().refresh_hours.max(1)
     }
 
     pub fn kev_entries(&self) -> Vec<crate::inventory::KevEntry> {
@@ -142,7 +147,7 @@ impl Intel {
 
     /// All feed definitions: config.toml, then data/feeds/feeds.json, then the remote manifest.
     fn collect_feeds(&self, manifest: Option<&Manifest>) -> Vec<(FeedCfg, String)> {
-        let mut out: Vec<(FeedCfg, String)> = self.cfg.feeds.iter().cloned().map(|f| (f, "config".to_string())).collect();
+        let mut out: Vec<(FeedCfg, String)> = self.cfg.read().feeds.iter().cloned().map(|f| (f, "config".to_string())).collect();
         if let Ok(s) = std::fs::read_to_string(self.extra_feeds_path()) {
             match serde_json::from_str::<Manifest>(&s) {
                 Ok(m) => {
@@ -182,13 +187,14 @@ impl Intel {
             .timeout(std::time::Duration::from_secs(90))
             .build()
             .unwrap();
-        let max_age = std::time::Duration::from_secs(self.cfg.refresh_hours * 3600);
+        let max_age = std::time::Duration::from_secs(self.cfg.read().refresh_hours * 3600);
 
         let mut update = UpdateStatus { app_version: APP_VERSION.into(), ..Default::default() };
         let mut manifest: Option<Manifest> = None;
-        if download && !self.cfg.manifest_url.trim().is_empty() {
+        let manifest_url = self.cfg.read().manifest_url.clone();
+        if download && !manifest_url.trim().is_empty() {
             update.manifest_checked = Some(crate::util::now_ms());
-            match client.get(&self.cfg.manifest_url).send().await {
+            match client.get(&manifest_url).send().await {
                 Ok(r) if r.status().is_success() => match r.json::<Manifest>().await {
                     Ok(m) => {
                         update.manifest_version = m.version.clone();
@@ -263,7 +269,7 @@ impl Intel {
                 }
             }
             let (entries, parse_err) = match std::fs::read_to_string(&path) {
-                Ok(body) => (parse_feed(&feed, &body, self.cfg.ipsum_min_score, &mut new), None),
+                Ok(body) => (parse_feed(&feed, &body, self.cfg.read().ipsum_min_score, &mut new), None),
                 Err(e) => (0, Some(format!("no local copy: {e}"))),
             };
             let updated = std::fs::metadata(&path)

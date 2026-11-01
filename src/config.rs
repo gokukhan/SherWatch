@@ -210,6 +210,244 @@ fn d_ipsum() -> u32 { 3 }
 fn d_mmdb() -> String { "data/geo/dbip-city-lite.mmdb".into() }
 fn d_geo_url() -> String { "https://download.db-ip.com/free/dbip-city-lite-{YYYY}-{MM}.mmdb.gz".into() }
 
+// ---------- editable settings (Settings page) ----------
+// The page sends only the fields it changed; a missing field keeps its value. Secrets arrive as
+// "(set)" when untouched. Values are validated here, applied to the live config and written back to
+// config.toml with toml_edit so the comments in the file survive.
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ConfigPatch {
+    #[serde(default)]
+    pub analysis: AnalysisPatch,
+    #[serde(default)]
+    pub intel: IntelPatch,
+    #[serde(default)]
+    pub vuln: VulnPatch,
+    #[serde(default)]
+    pub ai: AiPatch,
+    #[serde(default)]
+    pub virustotal: VtPatch,
+    #[serde(default)]
+    pub geo: GeoPatch,
+    #[serde(default)]
+    pub server: ServerPatch,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct AnalysisPatch {
+    pub alert_cooldown_minutes: Option<u64>,
+    pub exfil_bytes_per_minute: Option<u64>,
+    pub exfil_bytes_per_5min: Option<u64>,
+    pub many_destinations_threshold: Option<usize>,
+    pub approved_uploaders: Option<Vec<String>>,
+    pub file_upload_bytes_per_minute: Option<u64>,
+    pub file_sharing_min_bytes: Option<u64>,
+    pub file_sharing_domains: Option<Vec<String>>,
+    pub beacon_min_intervals: Option<usize>,
+    pub beacon_max_cv: Option<f64>,
+    pub watch_countries: Option<Vec<String>>,
+    pub reverse_dns: Option<bool>,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct IntelPatch {
+    pub refresh_hours: Option<u64>,
+    pub ipsum_min_score: Option<u32>,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct VulnPatch {
+    pub online_lookup: Option<bool>,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct AiPatch {
+    pub provider: Option<String>,
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct VtPatch {
+    pub api_key: Option<String>,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct GeoPatch {
+    /// A number sets the coordinate; null or "" clears it (auto-detect again).
+    pub home_lat: Option<serde_json::Value>,
+    pub home_lon: Option<serde_json::Value>,
+    pub detect_public_ip: Option<bool>,
+}
+#[derive(Debug, Default, Deserialize)]
+pub struct ServerPatch {
+    pub port: Option<u16>,
+    pub open_browser: Option<bool>,
+}
+
+fn clean_list(v: &[String], lower: bool, upper: bool) -> Vec<String> {
+    let mut out: Vec<String> = v
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| if lower { s.to_ascii_lowercase() } else if upper { s.to_ascii_uppercase() } else { s.to_string() })
+        .collect();
+    out.dedup();
+    out
+}
+
+fn coord(v: &serde_json::Value, lo: f64, hi: f64, what: &str) -> Result<Option<f64>, String> {
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) if s.trim().is_empty() => Ok(None),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().map(Some).map_err(|_| format!("{what} is not a number")),
+        serde_json::Value::Number(n) => Ok(n.as_f64()),
+        _ => Err(format!("{what} is not a number")),
+    }
+    .and_then(|o| match o {
+        Some(x) if x < lo || x > hi => Err(format!("{what} must be between {lo} and {hi}")),
+        other => Ok(other),
+    })
+}
+
+/// Apply a patch to `cfg`. Returns the "section.key" names that changed and the subset that only
+/// takes effect after a restart.
+pub fn apply_patch(cfg: &mut Config, p: &ConfigPatch) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut changed = vec![];
+    let mut restart = vec![];
+    macro_rules! set {
+        ($key:expr, $field:expr, $val:expr) => {{
+            let v = $val;
+            if $field != v {
+                $field = v;
+                changed.push($key.to_string());
+            }
+        }};
+    }
+    fn range<T: PartialOrd + std::fmt::Display + Copy>(v: T, lo: T, hi: T, what: &str) -> Result<T, String> {
+        if v < lo || v > hi {
+            Err(format!("{what} must be between {lo} and {hi}"))
+        } else {
+            Ok(v)
+        }
+    }
+    let a = &p.analysis;
+    if let Some(v) = a.alert_cooldown_minutes { set!("analysis.alert_cooldown_minutes", cfg.analysis.alert_cooldown_minutes, range(v, 1, 1440, "alert cooldown")?); }
+    if let Some(v) = a.exfil_bytes_per_minute { set!("analysis.exfil_bytes_per_minute", cfg.analysis.exfil_bytes_per_minute, range(v, 65_536, 1 << 40, "exfiltration per minute")?); }
+    if let Some(v) = a.exfil_bytes_per_5min { set!("analysis.exfil_bytes_per_5min", cfg.analysis.exfil_bytes_per_5min, range(v, 65_536, 1 << 40, "exfiltration per 5 minutes")?); }
+    if let Some(v) = a.many_destinations_threshold { set!("analysis.many_destinations_threshold", cfg.analysis.many_destinations_threshold, range(v, 5, 100_000, "fan-out threshold")?); }
+    if let Some(v) = &a.approved_uploaders { set!("analysis.approved_uploaders", cfg.analysis.approved_uploaders, clean_list(v, true, false)); }
+    if let Some(v) = a.file_upload_bytes_per_minute { set!("analysis.file_upload_bytes_per_minute", cfg.analysis.file_upload_bytes_per_minute, range(v, 65_536, 1 << 40, "file upload threshold")?); }
+    if let Some(v) = a.file_sharing_min_bytes { set!("analysis.file_sharing_min_bytes", cfg.analysis.file_sharing_min_bytes, range(v, 1024, 1 << 40, "file-sharing threshold")?); }
+    if let Some(v) = &a.file_sharing_domains { set!("analysis.file_sharing_domains", cfg.analysis.file_sharing_domains, clean_list(v, true, false)); }
+    if let Some(v) = a.beacon_min_intervals { set!("analysis.beacon_min_intervals", cfg.analysis.beacon_min_intervals, range(v, 3, 1000, "beacon intervals")?); }
+    if let Some(v) = a.beacon_max_cv { set!("analysis.beacon_max_cv", cfg.analysis.beacon_max_cv, range(v, 0.01, 5.0, "beacon jitter")?); }
+    if let Some(v) = &a.watch_countries {
+        let list = clean_list(v, false, true);
+        if let Some(bad) = list.iter().find(|c| c.len() != 2 || !c.chars().all(|ch| ch.is_ascii_alphabetic())) {
+            return Err(format!("watch country \"{bad}\" is not a two-letter code"));
+        }
+        set!("analysis.watch_countries", cfg.analysis.watch_countries, list);
+    }
+    if let Some(v) = a.reverse_dns { set!("analysis.reverse_dns", cfg.analysis.reverse_dns, v); }
+
+    if let Some(v) = p.intel.refresh_hours { set!("intel.refresh_hours", cfg.intel.refresh_hours, range(v, 1, 168, "feed refresh hours")?); }
+    if let Some(v) = p.intel.ipsum_min_score { set!("intel.ipsum_min_score", cfg.intel.ipsum_min_score, range(v, 1, 10, "IPsum score")?); }
+    if let Some(v) = p.vuln.online_lookup { set!("vuln.online_lookup", cfg.vuln.online_lookup, v); }
+
+    if let Some(v) = &p.ai.provider {
+        let v = v.trim().to_ascii_lowercase();
+        if !["free", "ollama", "anthropic", "openai"].contains(&v.as_str()) {
+            return Err("assistant provider must be free, ollama, anthropic or openai".into());
+        }
+        set!("ai.provider", cfg.ai.provider, v);
+    }
+    if let Some(v) = &p.ai.base_url { set!("ai.base_url", cfg.ai.base_url, v.trim().to_string()); }
+    if let Some(v) = &p.ai.model { set!("ai.model", cfg.ai.model, v.trim().to_string()); }
+    if let Some(v) = &p.ai.api_key {
+        if v != "(set)" { set!("ai.api_key", cfg.ai.api_key, v.trim().to_string()); }
+    }
+    if let Some(v) = &p.virustotal.api_key {
+        if v != "(set)" {
+            set!("virustotal.api_key", cfg.virustotal.api_key, v.trim().to_string());
+            if changed.last().map(|k| k == "virustotal.api_key").unwrap_or(false) {
+                restart.push("virustotal.api_key".into());
+            }
+        }
+    }
+    if let Some(v) = &p.geo.home_lat { set!("geo.home_lat", cfg.geo.home_lat, coord(v, -90.0, 90.0, "home latitude")?); }
+    if let Some(v) = &p.geo.home_lon { set!("geo.home_lon", cfg.geo.home_lon, coord(v, -180.0, 180.0, "home longitude")?); }
+    if let Some(v) = p.geo.detect_public_ip { set!("geo.detect_public_ip", cfg.geo.detect_public_ip, v); }
+    if let Some(v) = p.server.port {
+        set!("server.port", cfg.server.port, range(v, 1024, 65535, "port")?);
+        if changed.last().map(|k| k == "server.port").unwrap_or(false) {
+            restart.push("server.port".into());
+        }
+    }
+    if let Some(v) = p.server.open_browser { set!("server.open_browser", cfg.server.open_browser, v); }
+    Ok((changed, restart))
+}
+
+/// Write the given "section.key" values of `cfg` into config.toml, keeping every comment and the
+/// rest of the file as it is. Missing file: starts from the shipped default.
+pub fn write_keys(path: &Path, cfg: &Config, keys: &[String]) -> Result<(), String> {
+    use toml_edit::{value, Array, DocumentMut, Item};
+    let text = std::fs::read_to_string(path).unwrap_or_else(|_| crate::DEFAULT_CONFIG.to_string());
+    let mut doc: DocumentMut = text.parse().map_err(|e| format!("config.toml is not valid TOML: {e}"))?;
+    let arr = |v: &[String]| {
+        let mut a = Array::new();
+        for s in v {
+            a.push(s.as_str());
+        }
+        value(a)
+    };
+    for key in keys {
+        let Some((sec, k)) = key.split_once('.') else { continue };
+        let a = &cfg.analysis;
+        let item: Option<Item> = match key.as_str() {
+            "analysis.alert_cooldown_minutes" => Some(value(a.alert_cooldown_minutes as i64)),
+            "analysis.exfil_bytes_per_minute" => Some(value(a.exfil_bytes_per_minute as i64)),
+            "analysis.exfil_bytes_per_5min" => Some(value(a.exfil_bytes_per_5min as i64)),
+            "analysis.many_destinations_threshold" => Some(value(a.many_destinations_threshold as i64)),
+            "analysis.approved_uploaders" => Some(arr(&a.approved_uploaders)),
+            "analysis.file_upload_bytes_per_minute" => Some(value(a.file_upload_bytes_per_minute as i64)),
+            "analysis.file_sharing_min_bytes" => Some(value(a.file_sharing_min_bytes as i64)),
+            "analysis.file_sharing_domains" => Some(arr(&a.file_sharing_domains)),
+            "analysis.beacon_min_intervals" => Some(value(a.beacon_min_intervals as i64)),
+            "analysis.beacon_max_cv" => Some(value(a.beacon_max_cv)),
+            "analysis.watch_countries" => Some(arr(&a.watch_countries)),
+            "analysis.reverse_dns" => Some(value(a.reverse_dns)),
+            "intel.refresh_hours" => Some(value(cfg.intel.refresh_hours as i64)),
+            "intel.ipsum_min_score" => Some(value(cfg.intel.ipsum_min_score as i64)),
+            "vuln.online_lookup" => Some(value(cfg.vuln.online_lookup)),
+            "ai.provider" => Some(value(cfg.ai.provider.as_str())),
+            "ai.base_url" => Some(value(cfg.ai.base_url.as_str())),
+            "ai.model" => Some(value(cfg.ai.model.as_str())),
+            "ai.api_key" => Some(value(cfg.ai.api_key.as_str())),
+            "virustotal.api_key" => Some(value(cfg.virustotal.api_key.as_str())),
+            "geo.home_lat" => cfg.geo.home_lat.map(value),
+            "geo.home_lon" => cfg.geo.home_lon.map(value),
+            "geo.detect_public_ip" => Some(value(cfg.geo.detect_public_ip)),
+            "server.port" => Some(value(cfg.server.port as i64)),
+            "server.open_browser" => Some(value(cfg.server.open_browser)),
+            _ => continue,
+        };
+        if !doc.contains_table(sec) {
+            doc[sec] = Item::Table(toml_edit::Table::new());
+        }
+        match item {
+            Some(mut v) => {
+                // Keep the spacing and trailing comment of the old value ("5242880    # 5 MB").
+                if let (Some(old), Some(new)) = (doc[sec][k].as_value(), v.as_value_mut()) {
+                    *new.decor_mut() = old.decor().clone();
+                }
+                doc[sec][k] = v;
+            }
+            None => {
+                if let Some(t) = doc[sec].as_table_mut() {
+                    t.remove(k);
+                }
+            }
+        }
+    }
+    std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())
+}
+
 pub fn load(path: &Path) -> Config {
     match std::fs::read_to_string(path) {
         Ok(s) => match toml::from_str::<Config>(&s) {

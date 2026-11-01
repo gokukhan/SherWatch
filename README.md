@@ -79,10 +79,13 @@ one dashboard, so features arrive in both at the same time.
 
 ## Configuration
 
-All settings live in [config.toml](config.toml). Edit and restart. The main knobs are the
-listening port, alert cooldown, exfiltration thresholds, beaconing sensitivity, the country
-watch list, feed definitions, the VirusTotal key and the home location for the globe.
-The file is commented.
+All settings live in [config.toml](config.toml) and most of them are editable on the
+dashboard's Settings page, which validates, saves to the file (comments kept) and applies
+them at once: the file-upload and file-sharing thresholds and approved uploaders, the
+exfiltration, fan-out and beaconing thresholds, the country watch list, alert cooldown,
+feed refresh interval, online CVE lookup, VirusTotal and assistant keys, model and provider,
+and the home location for the globe. Port and browser launch need a restart. Feed
+definitions are edited in the file.
 
 ## Project layout
 

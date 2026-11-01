@@ -85,7 +85,8 @@ struct ProcSnap {
 
 fn run_rules(state: &AppState) {
     let now = now_ms();
-    let cfg = &state.cfg.analysis;
+    let cfg_now = state.cfg.read().analysis.clone();
+    let cfg = &cfg_now;
     let uptime = now - state.started;
     // The monitor itself: unsigned development builds and reverse-DNS bursts are expected from it.
     let self_pid = std::process::id();
