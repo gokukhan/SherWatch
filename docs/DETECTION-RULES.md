@@ -68,6 +68,8 @@ dashboard (changes apply at once and are written back to the file). Typical adju
 - Loopback traffic (127.0.0.1 / ::1, for example the dashboard itself or a local dev server)
   shows on connection rows but is not counted as upload or download, so it cannot trigger the
   volume rules R10, R27 and R28.
+- The monitor's own DNS lookups are not recorded, so they can neither clutter the DNS page
+  nor trigger R11.
 - Encrypted traffic contents are never inspected; the rules work on metadata, timing, volume
   and reputation.
 - A signed binary from a reputable vendor that is itself malicious (supply chain) only shows

@@ -613,6 +613,12 @@ impl AppState {
     // ---------- DNS ----------
 
     pub fn record_dns(&self, mut ev: DnsEvent) {
+        // The monitor's own lookups (reverse DNS for the globe and connection labels, resolving the
+        // file-sharing hosts) are not the user's activity: they would dominate the DNS page and
+        // the top-domains chart, so they are not recorded at all.
+        if ev.pid == std::process::id() {
+            return;
+        }
         self.touch_process(ev.pid);
         ev.process = self.process_name(ev.pid);
         if let Some(mut p) = self.procs.get_mut(&ev.pid) {

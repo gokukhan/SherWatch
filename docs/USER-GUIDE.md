@@ -130,7 +130,8 @@ Critical and high alerts also pop up as toasts in the bottom-right corner on eve
 Live DNS queries captured from the Windows DNS client, per process, with type, status,
 and answers, plus a chart of the most queried domains. Cards filter by query type, failed
 lookups and flagged names. Needs packet capture. Queries for
-domains in a threat feed carry an **intel** tag and raise a critical alert.
+domains in a threat feed carry an **intel** tag and raise a critical alert. The monitor's
+own lookups (reverse DNS for the globe, resolving the file-sharing hosts) are not listed.
 
 ## Inventory
 
