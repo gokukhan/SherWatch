@@ -282,7 +282,10 @@ fn run_rules(state: &AppState) {
         // R23 system process name running from the wrong place (a valid Microsoft signature clears it:
         // Defender's MsMpEng legitimately lives under ProgramData).
         let ms_signed = p.sig == SigStatus::Valid && p.signer.to_ascii_lowercase().contains("microsoft");
-        if util::SYSTEM_NAMES.contains(&p.lname.as_str()) && !ms_signed && !p.flags.iter().any(|f| f == "system" || f == "windows") && !p.exe.is_empty() {
+        // Wait for the signature check: judging a system-named binary before its signature is known
+        // flagged Defender's own engine at every start.
+        let sig_known = matches!(p.sig, SigStatus::Valid | SigStatus::NotSigned | SigStatus::Invalid);
+        if util::SYSTEM_NAMES.contains(&p.lname.as_str()) && sig_known && !ms_signed && !p.flags.iter().any(|f| f == "system" || f == "windows") && !p.exe.is_empty() {
             state.push_alert(
                 Severity::Critical,
                 "R23-masquerade",
