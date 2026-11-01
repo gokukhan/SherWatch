@@ -166,6 +166,8 @@ h1 { font-size: 18px; font-weight: 600; margin: 0; }
 .alert-list .empty .link { margin-left: 6px; }
 .btn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; text-decoration: none; color: var(--text); font-size: 12.5px; }
 .btn:hover { border-color: var(--text-2); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--border); background: var(--surface-2); }
 .btn.danger { border-color: rgba(208,59,59,0.6); }
 .btn.danger:hover { background: rgba(208,59,59,0.25); }
 .btn.warn { border-color: rgba(250,178,25,0.5); }
