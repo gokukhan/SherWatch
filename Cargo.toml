@@ -3,6 +3,9 @@ name = "sherwatch"
 version = "0.1.0"
 edition = "2021"
 description = "SherWatch Command Center - per-process network monitoring and threat analysis for Windows"
+license = "Apache-2.0"
+repository = "https://github.com/gokukhan/SherWatch"
+authors = ["Sher Khan"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }

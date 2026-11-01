@@ -1,5 +1,6 @@
 // Headless screenshot + console capture for the dashboard, via the Chrome DevTools Protocol.
-// Usage: node tools/shot.mjs <url> <out.png> [width] [height] [waitMs] [view]
+// Usage: node tools/shot.mjs <url> <out.png> [width] [height] [waitMs] [view] [evalExpr]
+//   SHOT_SCALE=2 renders at 2x device pixels (sharp zoom-ins for the video).
 import { spawn } from 'node:child_process';
 import { writeFileSync, existsSync } from 'node:fs';
 
@@ -24,7 +25,7 @@ try {
   };
   const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
   await send('Runtime.enable'); await send('Page.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: +w, height: +h, deviceScaleFactor: 1, mobile: false });
+  await send('Emulation.setDeviceMetricsOverride', { width: +w, height: +h, deviceScaleFactor: +(process.env.SHOT_SCALE || 1), mobile: false });
   await send('Page.navigate', { url });
   await sleep(+waitMs);
   if (view) { await send('Runtime.evaluate', { expression: `document.querySelector('.nav-btn[data-view="${view}"]').click()` }); await sleep(3500); }

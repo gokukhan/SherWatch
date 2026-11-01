@@ -3,6 +3,9 @@ name = "sherwatch-desktop"
 version = "0.1.0"
 edition = "2021"
 description = "SherWatch Command Center desktop app (Tauri window and tray around the shared sherwatch library)"
+license = "Apache-2.0"
+repository = "https://github.com/gokukhan/SherWatch"
+authors = ["Sher Khan"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

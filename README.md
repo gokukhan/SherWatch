@@ -101,7 +101,8 @@ data/geo/            DB-IP Lite city database
 data/sherwatch.db       SQLite history (alerts, traffic, connections, DNS, blocks, known apps)
 data/logs/           log output when started through run.cmd
 docs/                documentation
-tools/               rustup installer and npm packages used to vendor the frontend libraries
+tools/               rustup installer, npm packages (frontend libraries, Tauri CLI, ffmpeg),
+                     screenshot and explainer-video scripts
 ```
 
 ## Documentation
@@ -112,6 +113,9 @@ tools/               rustup installer and npm packages used to vendor the fronte
 - [docs/UPDATING.md](docs/UPDATING.md): how threat data stays current and when the app needs a code change.
 - [docs/BUILDING.md](docs/BUILDING.md): building from source.
 - [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md): licences and data-source attributions.
+- [LICENSE](LICENSE) and [NOTICE](NOTICE): the project licence (Apache 2.0) and the attribution to keep.
+- [docs/presentation/](docs/presentation/): the slide deck (HTML and PDF), the explainer video
+  (portrait and landscape) and its storyboard; how they are made is in docs/BUILDING.md.
 
 ## Privacy
 
@@ -127,3 +131,19 @@ tools/               rustup installer and npm packages used to vendor the fronte
 - Reverse DNS lookups for unexplained IPs go through your normal resolver and can be turned
   off with `reverse_dns = false`.
 - VirusTotal is off until you add a key; only SHA-256 hashes are ever sent, never files.
+
+## License
+
+SherWatch is open source under the [Apache License 2.0](LICENSE). Copyright 2026 Sher Khan.
+
+- Free to use, copy, modify and redistribute, for personal and for commercial purposes.
+- Credit is required: keep the copyright notice, the LICENSE and the NOTICE file with any copy
+  or derivative, and state what you changed. Showing "based on SherWatch by Sher Khan" in your
+  own product's about screen or documentation is the right way to do it.
+- No warranty and no commitments: the software is provided "as is", without support, service
+  levels or liability, as the licence states. It is a monitoring aid, not a guarantee against
+  intrusion or data loss.
+- Contributions are accepted under the same licence.
+
+Third-party libraries, feeds and data sources keep their own licences; see
+[docs/THIRD-PARTY.md](docs/THIRD-PARTY.md).

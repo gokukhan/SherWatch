@@ -1,5 +1,8 @@
 # Third-party components and data sources
 
+SherWatch itself is licensed under the Apache License 2.0 (see `LICENSE` and `NOTICE` in the
+repository root). The components below keep their own licences.
+
 ## Data sources
 
 | Source | What | Licence / terms | URL |
