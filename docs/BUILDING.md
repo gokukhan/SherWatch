@@ -118,7 +118,7 @@ cargo run -p sherwatch-desktop -- --no-elevate
 
 `.github/workflows/build.yml` has two jobs:
 
-- **check** runs `cargo check` on `ubuntu-22.04`, `macos-14` and `windows-latest` for every
+- **check** runs `cargo check` on `ubuntu-22.04`, `macos-15` and `windows-latest` for every
   push and pull request to `main`, so a change that breaks one platform is caught without
   owning that machine.
 - **bundle** runs on tags matching `v*` and on manual dispatch (`gh workflow run build.yml`,
