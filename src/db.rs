@@ -73,6 +73,7 @@ impl Db {
             CREATE INDEX IF NOT EXISTS dns_log_ts ON dns_log(ts);
             CREATE TABLE IF NOT EXISTS known_apps(exe TEXT PRIMARY KEY, name TEXT, first_seen INTEGER);
             CREATE TABLE IF NOT EXISTS blocks(id INTEGER PRIMARY KEY, kind TEXT, target TEXT, rule TEXT UNIQUE, ts INTEGER);
+            CREATE TABLE IF NOT EXISTS cve_cache(id TEXT PRIMARY KEY, cpe TEXT, ts INTEGER);
             "#,
         )?;
         let (tx, rx) = mpsc::channel::<DbMsg>();
@@ -119,10 +120,6 @@ impl Db {
             out
         })
         .unwrap_or_default()
-    }
-
-    pub fn load_blocks(&self) -> Vec<BlockRule> {
-        self.query_blocking(|sql| blocks(sql).unwrap_or_default()).unwrap_or_default()
     }
 
     pub fn load_recent_alerts(&self, limit: usize) -> Vec<Alert> {

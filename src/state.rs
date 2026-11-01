@@ -14,6 +14,37 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc;
 use tokio::sync::broadcast;
 
+fn load_trusted(cfg: &[String], root: &std::path::Path) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for entry in cfg {
+        let (exe, sha) = entry.split_once('|').unwrap_or((entry.as_str(), ""));
+        map.insert(exe.trim().to_ascii_lowercase(), sha.trim().to_string());
+    }
+    if let Ok(s) = std::fs::read_to_string(root.join("data").join("trusted.json")) {
+        if let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(&s) {
+            for v in list {
+                if let Some(exe) = v["exe"].as_str() {
+                    map.insert(exe.to_ascii_lowercase(), v["sha256"].as_str().unwrap_or("").to_string());
+                }
+            }
+        }
+    }
+    map
+}
+
+#[derive(Default, Clone)]
+pub struct InventoryState {
+    pub items: HashMap<String, crate::inventory::InventoryItem>,
+    pub os: crate::inventory::OsInfo,
+    pub last_scan: Option<i64>,
+    pub scanning: bool,
+    pub online_running: bool,
+    pub online_progress: String,
+    pub online_last: Option<i64>,
+    pub kev_count: usize,
+    pub pid_services: HashMap<u32, Vec<String>>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Dir {
     Out,
@@ -62,6 +93,11 @@ pub struct AppState {
     pub etw_events: AtomicU64,
     pub hosts_issues: RwLock<Vec<String>>,
     pub home: RwLock<Option<(f64, f64, String)>>,
+    pub inventory: RwLock<InventoryState>,
+    /// "exe|proto|port" combinations that already raised a listener alert this session.
+    pub seen_listeners: DashSet<String>,
+    /// Trusted executables: lowercase path -> sha256 (from config.toml plus data/trusted.json).
+    pub trusted: RwLock<HashMap<String, String>>,
 
     sec_out: AtomicU64,
     sec_in: AtomicU64,
@@ -134,6 +170,8 @@ impl AppState {
         }
         let recent = db.load_recent_alerts(500);
         let seq = db.next_alert_id();
+        let cfg_trusted = cfg.analysis.trusted.clone();
+        let root_for_trusted = root.clone();
         let mut alerts = VecDeque::new();
         for a in recent.into_iter().rev() {
             alerts.push_back(a);
@@ -169,6 +207,9 @@ impl AppState {
             etw_events: AtomicU64::new(0),
             hosts_issues: RwLock::new(vec![]),
             home: RwLock::new(None),
+            inventory: RwLock::new(InventoryState::default()),
+            seen_listeners: DashSet::new(),
+            trusted: RwLock::new(load_trusted(&cfg_trusted, &root_for_trusted)),
             sec_out: AtomicU64::new(0),
             sec_in: AtomicU64::new(0),
             total_out: AtomicU64::new(0),
@@ -221,9 +262,13 @@ impl AppState {
         let flags = util::path_flags(&exe);
         let key = exe.to_ascii_lowercase();
         let meta = self.exe_meta.get(&key).map(|m| m.clone());
+        let services = self.inventory.read().pid_services.get(&pid).cloned().unwrap_or_default();
         if let Some(mut p) = self.procs.get_mut(&pid) {
             p.name = name.clone();
             p.exe = exe.clone();
+            if !services.is_empty() {
+                p.services = services;
+            }
             p.cmdline = cmdline;
             p.parent_pid = parent_pid;
             p.parent_name = parent_name;
@@ -285,6 +330,7 @@ impl AppState {
         let geo = self.geo.lookup(remote);
         let intel = self.intel.check_ip(&remote);
         let host = self.ip_to_host.get(&remote).map(|h| h.clone());
+        let _ = &host;
         if host.is_none() && self.cfg.analysis.reverse_dns && self.rdns_done.insert(remote) {
             let _ = self.rdns_tx.send(remote);
         }
@@ -299,6 +345,7 @@ impl AppState {
         if intel.is_some() {
             flags.push("intel".into());
         }
+        let owner = host.as_deref().and_then(util::owner_from_hostname).or_else(|| util::ip_owner(&remote));
         Connection {
             key,
             pid: key.pid,
@@ -321,6 +368,7 @@ impl AppState {
             lat: geo.lat,
             lon: geo.lon,
             hostname: host,
+            owner,
             intel,
             flags,
             risk: 0,
@@ -525,6 +573,9 @@ impl AppState {
             for mut c in self.conns.iter_mut() {
                 if c.remote_addr == ip && c.hostname.is_none() {
                     c.hostname = Some(ev.query.clone());
+                    if let Some(o) = util::owner_from_hostname(&ev.query) {
+                        c.owner = Some(o);
+                    }
                 }
             }
         }
@@ -710,7 +761,7 @@ impl AppState {
             "top": top,
             "etw": self.etw_active.load(Ordering::Relaxed),
             "etw_events": self.etw_events.load(Ordering::Relaxed),
-            "unacked": self.alerts.read().iter().filter(|a| !a.acked).count(),
+            "unacked": self.alerts.read().iter().filter(|a| !a.acked && a.severity > Severity::Info).count(),
         })
         .to_string();
         let _ = self.ws_tx.send(msg);
@@ -728,7 +779,7 @@ impl AppState {
         let mut unacked = 0;
         for a in alerts.iter() {
             *by_sev.entry(a.severity.as_str().to_string()).or_default() += 1;
-            if !a.acked {
+            if !a.acked && a.severity > Severity::Info {
                 unacked += 1;
             }
         }
@@ -789,11 +840,47 @@ impl AppState {
         }
     }
 
+    /// True when the executable is on the trust list with its current hash.
+    pub fn is_trusted(&self, exe: &str, sha256: Option<&str>) -> bool {
+        let t = self.trusted.read();
+        match t.get(&exe.to_ascii_lowercase()) {
+            Some(h) if h.is_empty() => true,
+            Some(h) => sha256.map(|s| s.eq_ignore_ascii_case(h)).unwrap_or(false),
+            None => false,
+        }
+    }
+
+    pub fn trust_exe(&self, exe: &str, sha256: &str) {
+        self.trusted.write().insert(exe.to_ascii_lowercase(), sha256.to_string());
+        self.save_trusted();
+        // Clear the risk the trust-sensitive rules added so the process reads as clean.
+        for mut p in self.procs.iter_mut() {
+            if p.exe.eq_ignore_ascii_case(exe) {
+                p.risk = 0;
+            }
+        }
+    }
+
+    pub fn untrust_exe(&self, exe: &str) {
+        self.trusted.write().remove(&exe.to_ascii_lowercase());
+        self.save_trusted();
+    }
+
+    fn save_trusted(&self) {
+        let t = self.trusted.read();
+        let list: Vec<serde_json::Value> = t.iter().map(|(k, v)| serde_json::json!({"exe": k, "sha256": v})).collect();
+        let _ = std::fs::write(self.root.join("data").join("trusted.json"), serde_json::to_string_pretty(&list).unwrap_or_default());
+    }
+
     pub fn set_hostname(&self, ip: IpAddr, host: String) {
         self.ip_to_host.entry(ip).or_insert_with(|| host.clone());
+        let owner = util::owner_from_hostname(&host);
         for mut c in self.conns.iter_mut() {
             if c.remote_addr == ip && c.hostname.is_none() {
                 c.hostname = Some(host.clone());
+                if owner.is_some() {
+                    c.owner = owner;
+                }
             }
         }
     }

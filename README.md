@@ -25,6 +25,16 @@ optional VirusTotal hash lookups if you add an API key.
 - **Self-updating threat intelligence.** Public blocklists refresh on a schedule. New feed
   definitions can be added without a rebuild, and the app tells you when a source changed in
   a way that needs a code update. See [docs/UPDATING.md](docs/UPDATING.md).
+- **Software inventory and exploit exposure.** Versions of every network-active program,
+  every Windows service and every installed program, matched offline against CISA's Known
+  Exploited Vulnerabilities catalogue, with a "likely unpatched" verdict from file dates,
+  Windows patch age, and an opt-in online CVE lookup for exact versions.
+- **Built-in analyst assistant.** Ask "what is this process doing?" or "summarise my
+  network" and get a plain-language answer with a verdict and a recommended action. Free
+  keyless web models by default, every local Ollama model, or your own Claude / Groq /
+  OpenRouter / Gemini key, selectable from a dropdown.
+- **Trust list.** Vouch for an unsigned program by its hash to silence reputation alerts for
+  that exact file.
 - **Code signing and hashing.** Every network-active executable is Authenticode-verified
   (including catalog-signed Windows files) and SHA-256 hashed. Optional VirusTotal lookup.
 - **Response actions.** Terminate a process, block an executable or an IP address in Windows

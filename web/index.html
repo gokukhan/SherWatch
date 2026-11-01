@@ -24,6 +24,8 @@
       <button class="nav-btn" data-view="processes"><span class="ico">▣</span>Processes</button>
       <button class="nav-btn" data-view="alerts"><span class="ico">▲</span>Alerts <span class="badge" id="nav-alert-badge" hidden>0</span></button>
       <button class="nav-btn" data-view="dns"><span class="ico">◇</span>DNS</button>
+      <button class="nav-btn" data-view="inventory"><span class="ico">⛨</span>Inventory</button>
+      <button class="nav-btn" data-view="assistant"><span class="ico">✦</span>Assistant</button>
       <button class="nav-btn" data-view="history"><span class="ico">≋</span>History</button>
       <button class="nav-btn" data-view="settings"><span class="ico">⚙</span>Settings</button>
     </nav>
@@ -184,6 +186,54 @@
       </div>
     </section>
 
+    <!-- ===================== INVENTORY ===================== -->
+    <section class="view" id="view-inventory">
+      <div class="filter-row">
+        <select id="i-kind"><option value="">Apps, services and programs</option><option value="app">Network-active apps</option><option value="service">Services</option><option value="program">Installed programs</option></select>
+        <label class="chk"><input type="checkbox" id="i-flagged"> Flagged only</label>
+        <span class="count" id="inv-count"></span>
+        <span class="spacer"></span>
+        <span class="panel-sub" id="inv-progress"></span>
+        <button class="btn" id="inv-rescan">Rescan</button>
+        <button class="btn warn" id="inv-online" title="Sends product names and version numbers to cvedb.shodan.io. Nothing else leaves the machine.">Check CVEs online</button>
+      </div>
+      <div class="grid-inv">
+        <div class="panel">
+          <div class="panel-head"><h2>Windows</h2><span class="panel-sub" id="os-sub"></span></div>
+          <dl class="kv" id="os-kv"></dl>
+          <ul class="plain" id="os-kev"></ul>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Exposure summary</h2><span class="panel-sub" id="inv-kev-count"></span></div>
+          <dl class="kv" id="inv-summary"></dl>
+          <p class="muted">Offline check: every item is matched against CISA's Known Exploited Vulnerabilities catalogue; "likely unpatched" means the file on disk is older than the day the exploit was catalogued. The online check adds published CVEs for the exact version.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-wrap tall"><table class="tbl" id="inv-table"><thead><tr>
+          <th>Name</th><th>Version</th><th>Publisher</th><th>Kind</th><th>Network</th><th>Exploited (KEV)</th><th>CVEs</th><th>File date</th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ===================== ASSISTANT ===================== -->
+    <section class="view" id="view-assistant">
+      <div class="filter-row">
+        <select id="ai-provider" title="Which model answers"><option value="">Default (config)</option></select>
+        <span class="count" id="ai-status"></span>
+        <span class="spacer"></span>
+        <button class="btn" id="ai-summary">Summarise my network now</button>
+        <button class="btn" id="ai-clear">Clear chat</button>
+      </div>
+      <div class="panel chat-panel">
+        <div class="chat-log" id="chat-log"><div class="empty">Ask anything about what you see: "what is svchost 6400 doing?", "is cbservice.exe safe?", "which alerts matter today?". Use the ✦ buttons on processes and alerts to ask about a specific item.</div></div>
+        <form class="chat-form" id="chat-form">
+          <input id="chat-input" placeholder="Ask about your network…" autocomplete="off">
+          <button class="btn" type="submit" id="chat-send">Ask</button>
+        </form>
+      </div>
+    </section>
+
     <!-- ===================== HISTORY ===================== -->
     <section class="view" id="view-history">
       <div class="filter-row">
@@ -230,6 +280,11 @@
           </div>
         </div>
         <div class="panel">
+          <div class="panel-head"><h2>Trusted programs</h2></div>
+          <p class="muted">Unsigned programs you vouched for. Trust is tied to the file hash; an updated or replaced file alerts again until re-trusted.</p>
+          <div class="table-wrap"><table class="tbl" id="trust-table"><thead><tr><th>Executable</th><th>SHA-256</th><th></th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="panel">
           <div class="panel-head"><h2>Capture status</h2></div>
           <div class="kv" id="capture-status"></div>
         </div>
@@ -261,6 +316,8 @@
     <div class="drawer-actions">
       <button class="btn danger" id="dr-kill">Terminate process</button>
       <button class="btn warn" id="dr-block">Block in firewall</button>
+      <button class="btn" id="dr-trust" title="Mark this exact file (by SHA-256) as known-good. Stops the unsigned and suspicious-location alerts for it; a changed file alerts again.">Trust this program</button>
+      <button class="btn ai" id="dr-explain" title="Ask the assistant what this process is and whether it is safe">✦ Explain</button>
     </div>
     <div class="drawer-body" id="dr-body"></div>
   </div>

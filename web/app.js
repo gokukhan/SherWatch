@@ -337,7 +337,7 @@ function alertItem(a, full) {
     <div><div class="alert-title">${esc(a.title)}</div>
       ${full ? `<div class="alert-detail">${esc(a.detail)}</div>` : ''}
       <div class="alert-meta">${procLabel}${a.remote ? ' · ' + esc(a.remote) : ''} · <span class="rule">${esc(a.rule)}</span>${a.count > 1 ? ` · ×${a.count}` : ''}</div></div>
-    <div class="alert-right"><span class="sev-label">${a.severity}</span><span>${timeStr(a.ts)}</span>${full && !a.acked ? `<button class="btn sm ack-btn">ack</button>` : ''}</div>
+    <div class="alert-right"><span class="sev-label">${a.severity}</span><span>${timeStr(a.ts)}</span>${full ? `<span><button class="btn sm ai explain-btn" title="Ask the assistant about this alert">✦</button> ${!a.acked ? `<button class="btn sm ack-btn">ack</button>` : ''}</span>` : ''}</div>
   </li>`;
 }
 function renderOverviewAlerts() {
@@ -358,6 +358,11 @@ function renderTicker(conns) {
 const keyOf = (c) => `${c.pid}|${c.proto}|${c.local_port}|${c.remote_addr}|${c.remote_port}`;
 const procNames = new Map();
 function procName(pid) { return procNames.get(pid) || `pid ${pid}`; }
+function procLabel(p) { return p.name ? (p.services?.length && /svchost/i.test(p.name) ? `${p.name} (${p.services.join(', ')})` : p.name) : `pid ${p.pid}`; }
+function whereCell(c) {
+  if (c.scope !== 'public') return `<span class="muted">${c.scope}</span>`;
+  return `${flag(c.country)} ${esc([c.city, c.country].filter(Boolean).join(', '))}${c.owner ? ` <span class="owner">· ${esc(c.owner)}</span>` : ''}`;
+}
 
 // ---------- globe ----------
 let globe = null, globeHost = null, worldFeatures = null, globeCountries = new Set(), globeIntelCountries = new Set();
@@ -383,7 +388,7 @@ async function initGlobe() {
     .arcColor((d) => d.risk >= 60 ? [C.critical, C.critical] : d.risk >= 25 ? [C.serious, C.serious] : [C.s1, C.s3])
     .arcAltitudeAutoScale(0.4).arcStroke(0.45).arcDashLength(0.4).arcDashGap(0.25).arcDashAnimateTime((d) => d.risk >= 25 ? 900 : 1800)
     .pointsData([]).pointLat('lat').pointLng('lon').pointColor((d) => riskColor(d.risk)).pointAltitude((d) => 0.01 + Math.min(0.15, Math.log10(1 + d.bytes_in + d.bytes_out) / 60)).pointRadius(0.32)
-    .pointLabel((d) => `<div class="globe-tip"><b>${esc(d.hostname || d.ip)}</b><br>${esc(d.ip)} · ${esc([d.city, d.country_name].filter(Boolean).join(', '))}<br>${esc((d.procs || []).join(', '))}<br>↑ ${fmtBytes(d.bytes_out)} · ↓ ${fmtBytes(d.bytes_in)}${d.intel ? '<br><b style="color:' + C.critical + '">' + esc(d.intel) + '</b>' : ''}</div>`)
+    .pointLabel((d) => `<div class="globe-tip"><b>${esc(d.hostname || d.ip)}</b>${d.owner ? ` · ${esc(d.owner)}` : ''}<br>${esc(d.ip)} · ${esc([d.city, d.country_name].filter(Boolean).join(', '))}<br>${esc((d.procs || []).join(', '))}<br>↑ ${fmtBytes(d.bytes_out)} · ↓ ${fmtBytes(d.bytes_in)}${d.intel ? '<br><b style="color:' + C.critical + '">' + esc(d.intel) + '</b>' : ''}</div>`)
     .onPointClick((d) => { setView('connections'); $('#global-search').value = d.ip; refreshView(true); })
     .onPointHover(hoverPause).onHexPolygonHover(hoverPause).onArcHover(hoverPause).onLabelHover(hoverPause)
     .arcsTransitionDuration(0).pointsTransitionDuration(0).labelsTransitionDuration(0)
@@ -474,7 +479,7 @@ function focusHome() { if (globe && S.home && S.home.lat != null && !globeFocuse
 function renderDestTable() {
   const rows = [...S.geo].sort((a, b) => (b.bytes_in + b.bytes_out) - (a.bytes_in + a.bytes_out)).slice(0, 300);
   $('#dest-count').textContent = `${S.geo.length} public hosts`;
-  $('#dest-table tbody').innerHTML = rows.map((d) => `<tr class="clickable" data-ip="${esc(d.ip)}"><td title="${esc(d.ip)}">${d.intel ? '<span class="tag intel">intel</span>' : ''}${esc(d.hostname || d.ip)}</td><td>${flag(d.country)} ${esc([d.city, d.country].filter(Boolean).join(', '))}</td><td>${esc((d.procs || []).join(', '))}</td><td class="num">${fmtBytes(d.bytes_out)}</td><td class="num">${fmtBytes(d.bytes_in)}</td><td>${meter(d.risk)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No public destinations yet</td></tr>';
+  $('#dest-table tbody').innerHTML = rows.map((d) => `<tr class="clickable" data-ip="${esc(d.ip)}"><td title="${esc(d.ip)}">${d.intel ? '<span class="tag intel">intel</span>' : ''}${esc(d.hostname || d.ip)}</td><td>${flag(d.country)} ${esc([d.city, d.country].filter(Boolean).join(', '))}${d.owner ? ` <span class="owner">· ${esc(d.owner)}</span>` : ''}</td><td>${esc((d.procs || []).join(', '))}</td><td class="num">${fmtBytes(d.bytes_out)}</td><td class="num">${fmtBytes(d.bytes_in)}</td><td>${meter(d.risk)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No public destinations yet</td></tr>';
   $$('#dest-table tr.clickable').forEach((tr) => tr.addEventListener('click', () => { setView('connections'); $('#global-search').value = tr.dataset.ip; refreshView(true); }));
 }
 
@@ -491,15 +496,16 @@ function renderConnections() {
     <td>${esc(procName(c.pid))}</td><td class="muted">${c.pid}</td><td>${c.proto.toUpperCase()}</td>
     <td class="mono">${c.intel ? `<span class="tag intel" title="${esc(c.intel)}">intel</span>` : ''}${esc(c.remote_addr)}</td>
     <td title="${esc(c.hostname || '')}">${esc(c.hostname || '')}</td><td>${c.remote_port}</td>
-    <td>${c.scope === 'public' ? `${flag(c.country)} ${esc([c.city, c.country].filter(Boolean).join(', '))}` : `<span class="muted">${c.scope}</span>`}</td>
+    <td>${whereCell(c)}</td>
     <td class="muted">${esc(c.state)}</td><td class="num">${fmtBytes(c.bytes_out)}</td><td class="num">${fmtBytes(c.bytes_in)}</td>
     <td class="muted">${fmtAge(now - c.first_seen)}</td><td>${meter(c.risk)}</td>
-    <td><button class="btn sm block-ip" data-ip="${esc(c.remote_addr)}" title="Block this IP in Windows Firewall">block IP</button></td></tr>`).join('') || '<tr><td colspan="13" class="empty">No connections match</td></tr>';
+    <td><button class="btn sm ai explain-conn" data-pid="${c.pid}" data-remote="${esc(c.remote_addr)}:${c.remote_port}" title="Ask the assistant">✦</button> <button class="btn sm block-ip" data-ip="${esc(c.remote_addr)}" title="Block this IP in Windows Firewall">block IP</button></td></tr>`).join('') || '<tr><td colspan="13" class="empty">No connections match</td></tr>';
+  $$('#conn-table .explain-conn').forEach((b) => b.addEventListener('click', () => askAi({ kind: 'connection', pid: +b.dataset.pid, remote: b.dataset.remote, label: `${procName(+b.dataset.pid)} → ${b.dataset.remote}` })));
   $$('#conn-table tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) openDrawer(+tr.dataset.pid); }));
   $$('#conn-table .block-ip').forEach((b) => b.addEventListener('click', () => blockIp(b.dataset.ip)));
 }
 ['#f-proto', '#f-sort', '#f-public'].forEach((s) => $(s).addEventListener('change', renderConnections));
-$('#global-search').addEventListener('input', () => { if (S.view === 'connections') renderConnections(); else if (S.view === 'processes') renderProcesses(); else if (S.view === 'dns') renderDns(); else if (S.view === 'alerts') renderAlerts(); });
+$('#global-search').addEventListener('input', () => { if (S.view === 'connections') renderConnections(); else if (S.view === 'processes') renderProcesses(); else if (S.view === 'dns') renderDns(); else if (S.view === 'alerts') renderAlerts(); else if (S.view === 'inventory') renderInventory(); });
 
 // ---------- processes ----------
 function renderProcesses() {
@@ -511,12 +517,13 @@ function renderProcesses() {
   if (sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name)); else rows.sort((a, b) => key[sort](b) - key[sort](a));
   $('#proc-count').textContent = `${rows.length} processes`;
   $('#proc-table tbody').innerHTML = rows.map((p) => `<tr class="clickable" data-pid="${p.pid}">
-    <td><b>${esc(p.name || 'pid ' + p.pid)}</b>${p.alive ? '' : ' <span class="tag">exited</span>'}<div class="muted mono" style="font-size:11px">${esc(p.exe)}</div></td>
+    <td><b>${esc(p.name || 'pid ' + p.pid)}</b>${p.services?.length ? ` <span class="muted">${esc(p.services.join(', '))}</span>` : ''}${p.alive ? '' : ' <span class="tag">exited</span>'}<div class="muted mono" style="font-size:11px">${esc(p.exe)}</div></td>
     <td class="muted">${p.pid}</td><td>${sigTag(p.meta)}</td><td>${pathTags(p.path_flags)}</td>
     <td><canvas class="pspark" width="90" height="22" data-pid="${p.pid}"></canvas></td>
     <td class="num">${fmtBytes(p.bytes_out)}</td><td class="num">${fmtBytes(p.bytes_in)}</td><td class="num">${p.conn_count}</td><td class="num">${p.dns_count}</td>
     <td>${meter(p.risk)}</td>
-    <td><button class="btn sm kill" data-pid="${p.pid}">kill</button> <button class="btn sm block" data-pid="${p.pid}">block</button></td></tr>`).join('') || '<tr><td colspan="11" class="empty">No processes</td></tr>';
+    <td><button class="btn sm ai explain" data-pid="${p.pid}" title="Ask the assistant">✦</button> <button class="btn sm kill" data-pid="${p.pid}">kill</button> <button class="btn sm block" data-pid="${p.pid}">block</button></td></tr>`).join('') || '<tr><td colspan="11" class="empty">No processes</td></tr>';
+  $$('#proc-table .explain').forEach((b) => b.addEventListener('click', () => { const p = S.procs.find((x) => x.pid === +b.dataset.pid); askAi({ kind: 'process', pid: +b.dataset.pid, label: p ? `${p.name} (${p.pid})` : '' }); }));
   const byPid = new Map(rows.map((p) => [p.pid, p]));
   $$('#proc-table .pspark').forEach((cv) => drawProcSpark(cv, byPid.get(+cv.dataset.pid)?.series));
   $$('#proc-table tr.clickable').forEach((tr) => tr.addEventListener('click', (e) => { if (!e.target.closest('button')) openDrawer(+tr.dataset.pid); }));
@@ -537,6 +544,7 @@ function renderAlerts() {
     await post(`/api/alerts/${id}/ack`); const a = S.alerts.find((x) => x.id === id); if (a) a.acked = true; renderAlerts(); renderOverviewAlerts(); updateSeverityPills();
   }));
   $$('#alert-list li').forEach((li) => li.addEventListener('click', (e) => { if (!e.target.closest('button') && +li.dataset.pid) openDrawer(+li.dataset.pid); }));
+  $$('#alert-list .explain-btn').forEach((b) => b.addEventListener('click', (e) => { const li = e.target.closest('li'); const a = S.alerts.find((x) => x.id === +li.dataset.id); askAi({ kind: 'alert', id: +li.dataset.id, label: a ? a.title : '#' + li.dataset.id }); }));
   // 24h histogram
   const now = Date.now(), start = now - 24 * 3600e3, buckets = 24;
   const labels = [], data = Object.fromEntries(SEV_ORDER.map((s) => [s, new Array(buckets).fill(0)]));
@@ -562,6 +570,153 @@ function renderDns() {
   charts.dns.data.labels = top.map(([k]) => k); charts.dns.data.datasets[0].data = top.map(([, v]) => v); charts.dns.update('none');
 }
 $('#d-filter').addEventListener('input', renderDns);
+
+// ---------- inventory ----------
+const invOpen = new Set();
+async function loadInventory(silent) {
+  const inv = await api('/api/inventory');
+  S.inventory = inv;
+  const os = inv.os || {};
+  $('#os-sub').textContent = os.caption ? `${os.caption} ${os.display_version || ''}` : 'not scanned yet';
+  const age = os.patch_age_days;
+  $('#os-kv').innerHTML = os.caption ? `<dt>Build</dt><dd>${esc(os.version)}.${esc(os.ubr)}</dd><dt>Last update installed</dt><dd>${os.last_hotfix ? dateTimeStr(os.last_hotfix).slice(0, 10) : 'unknown'}${age != null ? ` <span class="tag ${age > 45 ? 'flag' : 'ok'}">${age} days ago</span>` : ''}</dd><dt>Last boot</dt><dd>${os.last_boot ? dateTimeStr(os.last_boot) : '-'}</dd><dt>Exploited since update</dt><dd>${os.kev_since_patch?.length ? `<span class="tag kev">${os.kev_since_patch.length} Windows vulnerabilities</span>` : '<span class="tag ok">none catalogued</span>'}</dd>` : '<dd class="muted">Scanning…</dd>';
+  $('#os-kev').innerHTML = (os.kev_since_patch || []).slice(0, 12).map((k) => `<li>• <a href="https://nvd.nist.gov/vuln/detail/${esc(k.cve_id)}" target="_blank" rel="noopener">${esc(k.cve_id)}</a> ${esc(k.product)}: ${esc(k.name)} <span class="muted">(added ${esc(k.date_added)}${k.ransomware ? ', ransomware' : ''})</span></li>`).join('');
+  const items = inv.items || [];
+  const kevItems = items.filter((i) => i.kev.length);
+  const unpatched = items.filter((i) => i.kev.some((k) => k.likely_unpatched));
+  const withCves = items.filter((i) => i.cves.length);
+  $('#inv-kev-count').textContent = `${inv.kev_count.toLocaleString()} KEV entries loaded`;
+  $('#inv-summary').innerHTML = `<dt>Items</dt><dd>${items.length} (${items.filter((i) => i.kind === 'app').length} apps, ${items.filter((i) => i.kind === 'service').length} services, ${items.filter((i) => i.kind === 'program').length} programs)</dd><dt>With exploited history</dt><dd>${kevItems.length}</dd><dt>Likely unpatched</dt><dd>${unpatched.length ? `<span class="tag kev">${unpatched.length}</span>` : '<span class="tag ok">0</span>'}</dd><dt>Online CVE check</dt><dd>${inv.online_last ? `${withCves.length} items with CVEs · checked ${dateTimeStr(inv.online_last)}` : (inv.online_enabled ? 'enabled, pending' : 'not run (opt-in)')}</dd><dt>Last scan</dt><dd>${inv.last_scan ? dateTimeStr(inv.last_scan) : '-'}</dd>`;
+  $('#inv-progress').textContent = inv.online_running ? `looking up ${inv.online_progress}` : (inv.scanning ? 'scanning…' : '');
+  $('#inv-online').disabled = inv.online_running;
+  renderInventory();
+}
+function renderInventory() {
+  const inv = S.inventory; if (!inv) return;
+  const kind = $('#i-kind').value, flagged = $('#i-flagged').checked, q = $('#global-search').value.trim().toLowerCase();
+  let rows = inv.items.filter((i) => (!kind || i.kind === kind) && (!flagged || i.kev.length || i.cves.length));
+  if (q) rows = rows.filter((i) => [i.name, i.product, i.company, i.exe, i.version].some((v) => v && v.toLowerCase().includes(q)));
+  $('#inv-count').textContent = `${rows.length} items`;
+  $('#inv-table tbody').innerHTML = rows.slice(0, 800).map((i) => {
+    const unp = i.kev.filter((k) => k.likely_unpatched).length;
+    const kev = i.kev.length ? `<span class="tag ${unp ? 'kev' : 'kev-old'}">${i.kev.length} KEV${unp ? ` · ${unp} likely unpatched` : ' · updated since'}</span>` : '';
+    const cve = i.cves.length ? `<span class="tag ${i.max_cvss >= 9 ? 'cvss-crit' : i.max_cvss >= 7 ? 'cvss-high' : ''}">${i.cves.length} CVE · max ${i.max_cvss.toFixed(1)}</span>` : (i.cve_checked ? `<span class="tag ok" title="${esc(i.cve_note)}">none found</span>` : '');
+    const open = invOpen.has(i.id);
+    const detail = open ? `<tr class="inv-detail"><td colspan="8">
+        ${i.exe ? `<div class="mono muted">${esc(i.exe)}</div>` : ''}${i.services.length ? `<div class="muted">services: ${esc(i.services.join(', '))}</div>` : ''}${i.cpe ? `<div class="muted">CPE ${esc(i.cpe)} · ${esc(i.cve_note)}</div>` : (i.cve_note ? `<div class="muted">${esc(i.cve_note)}</div>` : '')}
+        ${i.kev.length ? `<b>Known exploited vulnerabilities</b><ul>${i.kev.map((k) => `<li><a href="https://nvd.nist.gov/vuln/detail/${esc(k.cve_id)}" target="_blank" rel="noopener">${esc(k.cve_id)}</a> ${esc(k.vendor)} ${esc(k.product)}: ${esc(k.name)} <span class="muted">(catalogued ${esc(k.date_added)}${k.ransomware ? ', used by ransomware' : ''}${k.likely_unpatched ? ', file predates it' : ', file is newer'})</span></li>`).join('')}</ul>` : ''}
+        ${i.cves.length ? `<b>Published CVEs for this version</b><ul>${i.cves.slice(0, 25).map((c) => `<li><a href="https://nvd.nist.gov/vuln/detail/${esc(c.cve_id)}" target="_blank" rel="noopener">${esc(c.cve_id)}</a> <span class="tag ${c.cvss >= 9 ? 'cvss-crit' : c.cvss >= 7 ? 'cvss-high' : ''}">CVSS ${c.cvss ?? '-'}</span>${c.kev ? '<span class="tag kev">exploited</span>' : ''} <span class="muted">${esc(c.published)}</span> ${esc(c.summary.slice(0, 220))}</li>`).join('')}${i.cves.length > 25 ? `<li class="muted">… ${i.cves.length - 25} more</li>` : ''}</ul>` : ''}
+      </td></tr>` : '';
+    return `<tr class="clickable inv-row" data-id="${esc(i.id)}"><td><b>${esc(i.name)}</b>${i.product && i.product !== i.name ? `<div class="muted">${esc(i.product)}</div>` : ''}</td><td class="mono">${esc(i.version || '-')}</td><td>${esc(i.company || '-')}</td><td class="muted">${esc(i.kind)}</td><td>${i.network_active ? '<span class="tag">online</span>' : ''}${i.pids.length ? `<span class="muted">${i.pids.length} proc</span>` : ''}</td><td>${kev}</td><td>${cve}</td><td class="muted">${i.file_mtime ? dateTimeStr(i.file_mtime).slice(0, 10) : '-'}</td></tr>${detail}`;
+  }).join('') || '<tr><td colspan="8" class="empty">Inventory not collected yet</td></tr>';
+  $$('#inv-table .inv-row').forEach((tr) => tr.addEventListener('click', () => { const id = tr.dataset.id; invOpen.has(id) ? invOpen.delete(id) : invOpen.add(id); renderInventory(); }));
+}
+['#i-kind', '#i-flagged'].forEach((s) => $(s).addEventListener('change', renderInventory));
+$('#inv-rescan').addEventListener('click', async () => { await post('/api/inventory/scan'); toast('Inventory scan started', 'results appear in a few seconds', 'sev-ok'); setTimeout(() => loadInventory(), 6000); });
+$('#inv-online').addEventListener('click', async () => {
+  if (!confirm('This sends the product names and version numbers of your installed software to cvedb.shodan.io to look up published CVEs. Continue?')) return;
+  const r = await post('/api/inventory/cve-lookup');
+  toast(r.ok ? 'Online CVE lookup started' : 'Not started', r.ok ? 'progress shows above the table' : r.error, r.ok ? 'sev-ok' : 'sev-high');
+});
+
+// ---------- assistant ----------
+const chat = { history: [], busy: false };
+function chatAdd(role, text, meta, cls = '') {
+  const log = $('#chat-log');
+  if (log.querySelector('.empty')) log.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = `msg ${role} ${cls}`;
+  el.textContent = text;
+  if (meta) { const m = document.createElement('div'); m.className = 'meta'; m.textContent = meta; el.appendChild(m); }
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+function aiSel() { const v = $('#ai-provider').value; if (!v) return {}; const i = v.indexOf(':'); return { provider: v.slice(0, i), model: v.slice(i + 1) }; }
+async function aiStatus() {
+  try {
+    const sel = aiSel();
+    const st = await api('/api/ai/status' + (sel.provider ? `?provider=${encodeURIComponent(sel.provider)}&model=${encodeURIComponent(sel.model)}` : ''));
+    const dd = $('#ai-provider'), cur = dd.value;
+    dd.innerHTML = `<option value="">Default · ${esc(st.configured)}</option>` + (st.choices || []).map((c) => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('');
+    if ([...dd.options].some((o) => o.value === cur)) dd.value = cur;
+    $('#ai-status').textContent = st.ready ? `${st.provider} · ${st.model}${st.local ? ' · offline' : ' · online'}` : 'not available';
+    $('#ai-status').title = st.note;
+    return st;
+  } catch { return null; }
+}
+$('#ai-provider').addEventListener('change', () => { localStorage.setItem('nm-ai-choice', $('#ai-provider').value); aiStatus(); });
+try { const saved = localStorage.getItem('nm-ai-choice'); if (saved) { $('#ai-provider').innerHTML += `<option value="${saved}">${saved}</option>`; $('#ai-provider').value = saved; } } catch {}
+async function askAi({ kind = 'none', pid, id, remote, question = '', label = '' }) {
+  if (chat.busy) return;
+  setView('assistant');
+  const shown = question || ({ process: `Explain ${label || 'this process'}`, alert: `Explain alert: ${label}`, connection: `Explain connection ${label}`, overview: 'Summarise my network' }[kind] || question);
+  chatAdd('user', shown);
+  const pending = chatAdd('ai', 'Thinking…', '', 'thinking');
+  chat.busy = true; $('#chat-send').disabled = true;
+  try {
+    const sel = aiSel();
+    const body = { kind, pid, id, remote, question, history: chat.history.slice(-8), provider: sel.provider, model: sel.model };
+    const r = await post('/api/ai/ask', body);
+    pending.remove();
+    if (r.ok) {
+      chatAdd('ai', r.answer, `${r.provider} · ${r.model}${r.local ? ' · nothing left this PC' : ' · sent to the model service'}`);
+      chat.history.push({ role: 'user', content: shown }, { role: 'assistant', content: r.answer });
+    } else {
+      chatAdd('ai', r.error || 'No answer', '', 'err');
+    }
+  } catch (e) { pending.remove(); chatAdd('ai', 'Request failed: ' + e.message, '', 'err'); }
+  finally { chat.busy = false; $('#chat-send').disabled = false; }
+}
+$('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const q = $('#chat-input').value.trim(); if (!q) return; $('#chat-input').value = ''; askAi({ kind: 'none', question: q }); });
+$('#ai-summary').addEventListener('click', () => askAi({ kind: 'overview' }));
+$('#ai-clear').addEventListener('click', () => { chat.history = []; $('#chat-log').innerHTML = '<div class="empty">Chat cleared.</div>'; });
+$('#dr-explain').addEventListener('click', () => { const p = S.procs.find((x) => x.pid === S.drawerPid); closeDrawer(); askAi({ kind: 'process', pid: S.drawerPid ?? p?.pid, label: p ? `${p.name} (${p.pid})` : '' }); });
+
+// ---------- sortable tables (click a header; numbers, bytes and ages sort numerically) ----------
+const sortState = {};
+function parseCell(td) {
+  const t = td.textContent.trim();
+  if (!t) return { n: -Infinity, s: '' };
+  let m = t.match(/^(-?[\d.,]+)\s*(B|KB|MB|GB|TB)(\/s)?$/i);
+  if (m) return { n: parseFloat(m[1].replace(/,/g, '')) * (1024 ** ['B', 'KB', 'MB', 'GB', 'TB'].indexOf(m[2].toUpperCase())), s: t };
+  m = t.match(/^(\d+)d(?:\s*(\d+)h)?$/); if (m) return { n: (+m[1]) * 86400 + (+m[2] || 0) * 3600, s: t };
+  m = t.match(/^(\d+)h(?:\s*(\d+)m)?$/); if (m) return { n: (+m[1]) * 3600 + (+m[2] || 0) * 60, s: t };
+  m = t.match(/^(\d+)m$/); if (m) return { n: +m[1] * 60, s: t };
+  m = t.match(/^(\d+)s$/); if (m) return { n: +m[1], s: t };
+  const meterVal = td.querySelector('.meter small'); if (meterVal) return { n: +meterVal.textContent, s: t };
+  if (/^-?\d+(\.\d+)?$/.test(t.replace(/,/g, ''))) return { n: parseFloat(t.replace(/,/g, '')), s: t };
+  return { n: NaN, s: t.toLowerCase() };
+}
+function applySort(table) {
+  const st = sortState[table.id]; if (!st) return;
+  const tbody = table.tBodies[0]; if (!tbody) return;
+  const rows = Array.from(tbody.rows).filter((r) => !r.classList.contains('inv-detail') && !r.querySelector('.empty'));
+  const details = new Map(); Array.from(tbody.rows).forEach((r, i) => { if (r.classList.contains('inv-detail')) details.set(tbody.rows[i - 1], r); });
+  rows.sort((a, b) => {
+    const A = parseCell(a.cells[st.col]), B = parseCell(b.cells[st.col]);
+    let c = (!isNaN(A.n) && !isNaN(B.n)) ? A.n - B.n : A.s.localeCompare(B.s);
+    return st.dir === 'asc' ? c : -c;
+  });
+  rows.forEach((r) => { tbody.appendChild(r); const d = details.get(r); if (d) tbody.appendChild(d); });
+  Array.from(table.tHead.rows[0].cells).forEach((th, i) => { th.classList.toggle('sorted-asc', i === st.col && st.dir === 'asc'); th.classList.toggle('sorted-desc', i === st.col && st.dir === 'desc'); });
+}
+function initSortableTables() {
+  $$('table.tbl').forEach((table) => {
+    if (!table.id || !table.tHead) return;
+    Array.from(table.tHead.rows[0].cells).forEach((th, i) => {
+      if (!th.textContent.trim()) return;
+      th.classList.add('sortable');
+      th.addEventListener('click', () => {
+        const st = sortState[table.id];
+        sortState[table.id] = { col: i, dir: st && st.col === i && st.dir === 'desc' ? 'asc' : 'desc' };
+        applySort(table);
+      });
+    });
+  });
+  // Re-apply after every re-render.
+  new MutationObserver((muts) => { for (const m of muts) { const t = m.target.closest?.('table.tbl'); if (t && sortState[t.id] && m.type === 'childList' && m.target.tagName === 'TBODY') { queueMicrotask(() => { if (!t.dataset.sorting) { t.dataset.sorting = '1'; applySort(t); delete t.dataset.sorting; } }); } } }).observe(document.body, { childList: true, subtree: true });
+}
 
 // ---------- history ----------
 $$('#h-range button').forEach((b) => b.addEventListener('click', () => { $$('#h-range button').forEach((x) => x.classList.remove('active')); b.classList.add('active'); S.histHours = +b.dataset.h; loadHistory(); }));
@@ -591,7 +746,9 @@ async function loadHistory() {
 
 // ---------- settings ----------
 async function loadSettings() {
-  const [intel, cfg, blocks, ov] = await Promise.all([api('/api/intel'), api('/api/config'), api('/api/blocks'), api('/api/overview')]);
+  const [intel, cfg, blocks, ov, trusted] = await Promise.all([api('/api/intel'), api('/api/config'), api('/api/blocks'), api('/api/overview'), api('/api/trusted')]);
+  $('#trust-table tbody').innerHTML = trusted.map((t) => `<tr><td class="mono">${esc(t.exe)}</td><td class="mono muted">${esc((t.sha256 || '').slice(0, 16))}…</td><td><button class="btn sm untrust" data-exe="${esc(t.exe)}">revoke</button></td></tr>`).join('') || '<tr><td colspan="3" class="empty">No trusted programs</td></tr>';
+  $$('#trust-table .untrust').forEach((b) => b.addEventListener('click', async () => { await post('/api/action/untrust', { exe: b.dataset.exe }); loadSettings(); }));
   S.intel = intel; S.config = cfg;
   $('#update-panel').hidden = !intel.update?.update_required;
   $('#update-reasons').innerHTML = (intel.update?.reasons || []).map((r) => `<li>• ${esc(r)}</li>`).join('');
@@ -639,9 +796,12 @@ async function openDrawer(pid) {
 async function renderDrawer() {
   let p;
   try { p = await api(`/api/process/${S.drawerPid}`); } catch { $('#dr-body').innerHTML = '<p class="empty">Process no longer tracked.</p>'; return; }
-  $('#dr-title').innerHTML = `${esc(p.name || 'pid ' + p.pid)} <span class="muted">· ${p.pid}</span> ${sigTag(p.meta)}`;
+  $('#dr-title').innerHTML = `${esc(p.name || 'pid ' + p.pid)} <span class="muted">· ${p.pid}</span> ${sigTag(p.meta)}${p.services?.length ? `<div class="muted" style="font-size:12px;font-weight:400">hosts: ${esc(p.services.join(', '))}</div>` : ''}`;
   $('#dr-exe').textContent = p.exe || '';
   $('#dr-kill').disabled = !p.alive; $('#dr-block').disabled = !p.exe;
+  $('#dr-trust').disabled = !p.exe || !p.meta?.sha256;
+  $('#dr-trust').textContent = p.trusted ? 'Trusted ✓ (click to revoke)' : 'Trust this program';
+  $('#dr-trust').dataset.trusted = p.trusted ? '1' : '';
   const now = Date.now();
   const conns = p.conns.sort((a, b) => (b.bytes_in + b.bytes_out) - (a.bytes_in + a.bytes_out));
   $('#dr-body').innerHTML = `
@@ -661,7 +821,7 @@ async function renderDrawer() {
     <h3>Alerts</h3><ul class="alert-list">${p.alerts.map((a) => alertItem(a, true)).join('') || '<li class="empty">None</li>'}</ul>
     <h3>Connections (${conns.length})</h3>
     <div class="table-wrap"><table class="tbl"><thead><tr><th>Remote</th><th>Port</th><th>Where</th><th class="num">Out</th><th class="num">In</th><th>Age</th></tr></thead><tbody>
-      ${conns.slice(0, 100).map((c) => `<tr><td class="mono">${c.intel ? '<span class="tag intel">intel</span>' : ''}${esc(c.hostname || c.remote_addr)}</td><td>${c.remote_port}/${c.proto}</td><td>${c.scope === 'public' ? `${flag(c.country)} ${esc(c.country || '')}` : `<span class="muted">${c.scope}</span>`}</td><td class="num">${fmtBytes(c.bytes_out)}</td><td class="num">${fmtBytes(c.bytes_in)}</td><td class="muted">${fmtAge(now - c.first_seen)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">none</td></tr>'}
+      ${conns.slice(0, 100).map((c) => `<tr><td class="mono">${c.intel ? '<span class="tag intel">intel</span>' : ''}${esc(c.hostname || c.remote_addr)}</td><td>${c.remote_port}/${c.proto}</td><td>${whereCell(c)}</td><td class="num">${fmtBytes(c.bytes_out)}</td><td class="num">${fmtBytes(c.bytes_in)}</td><td class="muted">${fmtAge(now - c.first_seen)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">none</td></tr>'}
     </tbody></table></div>
     <h3>DNS (${p.dns.length})</h3>
     <div class="table-wrap"><table class="tbl"><thead><tr><th>Time</th><th>Query</th><th>Type</th><th>Answers</th></tr></thead><tbody>
@@ -676,6 +836,13 @@ $('#drawer-backdrop').addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
 $('#dr-kill').addEventListener('click', () => killPid(S.drawerPid));
 $('#dr-block').addEventListener('click', () => blockPid(S.drawerPid));
+$('#dr-trust').addEventListener('click', async () => {
+  const p = S.procs.find((x) => x.pid === S.drawerPid) || { exe: $('#dr-exe').textContent };
+  const revoke = $('#dr-trust').dataset.trusted === '1';
+  const r = await post(revoke ? '/api/action/untrust' : '/api/action/trust', { pid: S.drawerPid, exe: p.exe });
+  toast(r.ok ? (revoke ? 'Trust revoked' : 'Program trusted') : 'Not changed', r.ok ? r.message : r.error, r.ok ? 'sev-ok' : 'sev-high');
+  renderDrawer();
+});
 
 // ---------- refresh loop ----------
 let refreshing = false;
@@ -687,7 +854,7 @@ async function refreshView(force) {
     if (v === 'overview' || v === 'globe' || v === 'connections') {
       const [procs, conns] = await Promise.all([api('/api/processes'), api('/api/connections')]);
       S.procs = procs; S.conns = conns;
-      procs.forEach((p) => { if (p.name) procNames.set(p.pid, p.name); });
+      procs.forEach((p) => { if (p.name) procNames.set(p.pid, procLabel(p)); });
     }
     if (v === 'overview') {
       const [ov, geo] = await Promise.all([api('/api/overview'), api('/api/geo')]);
@@ -697,10 +864,12 @@ async function refreshView(force) {
     } else if (v === 'globe') {
       S.geo = await api('/api/geo'); updateGlobe(); focusHome(); renderDestTable();
     } else if (v === 'connections') renderConnections();
-    else if (v === 'processes') { S.procs = await api('/api/processes'); S.procs.forEach((p) => { if (p.name) procNames.set(p.pid, p.name); }); renderProcesses(); }
+    else if (v === 'processes') { S.procs = await api('/api/processes'); S.procs.forEach((p) => { if (p.name) procNames.set(p.pid, procLabel(p)); }); renderProcesses(); }
     else if (v === 'alerts') { S.alerts = await api('/api/alerts?limit=500'); renderAlerts(); }
     else if (v === 'dns') { S.dns = await api('/api/dns?limit=400'); renderDns(); }
     else if (v === 'history') { if (force) await loadHistory(); }
+    else if (v === 'inventory') { if (force || S.inventory?.online_running || S.inventory?.scanning || !S.inventory?.last_scan) await loadInventory(); }
+    else if (v === 'assistant') { if (force) await aiStatus(); }
     else if (v === 'settings') { if (force) await loadSettings(); }
     if (S.drawerPid != null && !force) renderDrawer();
   } catch (e) { console.warn('refresh failed', e); }
@@ -710,6 +879,7 @@ async function refreshView(force) {
 // ---------- boot ----------
 (async function boot() {
   initCharts();
+  initSortableTables();
   connectWs();
   try { S.series = await api('/api/series'); } catch {}
   try { S.alerts = await api('/api/alerts?limit=300'); } catch {}

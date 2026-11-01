@@ -39,6 +39,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/geo", get(geo))
         .route("/api/listeners", get(listeners))
         .route("/api/home", get(home))
+        .route("/api/inventory", get(inventory))
+        .route("/api/inventory/scan", post(inventory_scan))
+        .route("/api/inventory/cve-lookup", post(inventory_cve_lookup))
         .route("/api/intel", get(intel))
         .route("/api/intel/refresh", post(intel_refresh))
         .route("/api/config", get(config))
@@ -50,6 +53,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/action/block-exe", post(action_block_exe))
         .route("/api/action/block-ip", post(action_block_ip))
         .route("/api/action/unblock", post(action_unblock))
+        .route("/api/action/trust", post(action_trust))
+        .route("/api/action/untrust", post(action_untrust))
+        .route("/api/trusted", get(trusted_list))
+        .route("/api/ai/status", get(ai_status))
+        .route("/api/ai/ask", post(ai_ask))
         .route("/api/export/{what}", get(export))
         .route("/ws", get(ws_handler))
         .fallback(static_file)
@@ -128,6 +136,7 @@ async fn process_detail(State(s): S, Path(pid): Path<u32>) -> Response {
     let alerts: Vec<Alert> = s.alerts.read().iter().rev().filter(|a| a.pid == pid).take(100).cloned().collect();
     let listeners: Vec<Listener> = s.listeners.iter().filter(|l| l.pid == pid).map(|l| l.clone()).collect();
     let mut v = serde_json::to_value(&p).unwrap();
+    v["trusted"] = json!(!p.exe.is_empty() && s.is_trusted(&p.exe, p.meta.sha256.as_deref()));
     v["conns"] = json!(conns);
     v["dns"] = json!(dns);
     v["alerts"] = json!(alerts);
@@ -190,7 +199,7 @@ async fn geo(State(s): S) -> Json<serde_json::Value> {
                 "ip": c.remote_addr.to_string(),
                 "lat": c.lat, "lon": c.lon,
                 "country": c.country, "country_name": c.country_name, "city": c.city,
-                "hostname": c.hostname, "intel": c.intel,
+                "hostname": c.hostname, "intel": c.intel, "owner": c.owner,
                 "bytes_in": 0u64, "bytes_out": 0u64, "conns": 0u64, "risk": 0u32,
                 "procs": Vec::<String>::new(),
                 "last_seen": c.last_seen,
@@ -217,6 +226,41 @@ async fn home(State(s): S) -> Json<serde_json::Value> {
         Some((lat, lon, label)) => Json(json!({"lat": lat, "lon": lon, "label": label})),
         None => Json(json!({"lat": null, "lon": null, "label": "unknown"})),
     }
+}
+
+async fn inventory(State(s): S) -> Json<serde_json::Value> {
+    let inv = s.inventory.read().clone();
+    let mut items: Vec<_> = inv.items.values().cloned().collect();
+    items.sort_by(|a, b| {
+        let ka = (a.kev.iter().filter(|k| k.likely_unpatched).count(), a.kev.len(), a.max_cvss as i64);
+        let kb = (b.kev.iter().filter(|k| k.likely_unpatched).count(), b.kev.len(), b.max_cvss as i64);
+        kb.cmp(&ka).then_with(|| b.network_active.cmp(&a.network_active)).then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+    });
+    Json(json!({
+        "items": items,
+        "os": inv.os,
+        "last_scan": inv.last_scan,
+        "scanning": inv.scanning,
+        "online_running": inv.online_running,
+        "online_progress": inv.online_progress,
+        "online_last": inv.online_last,
+        "online_enabled": s.cfg.vuln.online_lookup,
+        "kev_count": inv.kev_count,
+    }))
+}
+
+async fn inventory_scan(State(s): S) -> Json<serde_json::Value> {
+    let st = s.clone();
+    tokio::task::spawn_blocking(move || crate::inventory::collect(&st));
+    Json(json!({"ok": true}))
+}
+
+async fn inventory_cve_lookup(State(s): S) -> Json<serde_json::Value> {
+    if s.inventory.read().online_running {
+        return Json(json!({"ok": false, "error": "a lookup is already running"}));
+    }
+    tokio::spawn(crate::inventory::online_lookup(s.clone()));
+    Json(json!({"ok": true}))
 }
 
 async fn intel(State(s): S) -> Json<serde_json::Value> {
@@ -315,6 +359,82 @@ async fn action_block_ip(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_j
 
 async fn action_unblock(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
     action_result(crate::actions::unblock(&s, &b.rule.unwrap_or_default()))
+}
+
+async fn action_trust(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
+    let exe = b.exe.or_else(|| b.pid.map(|p| s.process_exe(p))).unwrap_or_default();
+    if exe.is_empty() {
+        return Json(json!({"ok": false, "error": "no executable path known"}));
+    }
+    let sha = s.exe_meta.get(&exe.to_ascii_lowercase()).and_then(|m| m.sha256.clone()).unwrap_or_default();
+    if sha.is_empty() {
+        return Json(json!({"ok": false, "error": "hash not computed yet, try again in a few seconds"}));
+    }
+    s.trust_exe(&exe, &sha);
+    Json(json!({"ok": true, "message": format!("{exe} trusted (sha256 {}...)", &sha[..12])}))
+}
+
+async fn action_untrust(State(s): S, Json(b): Json<ActionBody>) -> Json<serde_json::Value> {
+    let exe = b.exe.unwrap_or_default();
+    s.untrust_exe(&exe);
+    Json(json!({"ok": true, "message": format!("{exe} removed from the trust list")}))
+}
+
+async fn ai_status(State(s): S, Query(q): Query<ProviderQuery>) -> Json<serde_json::Value> {
+    let mut v = serde_json::to_value(crate::ai::status_for(&s, q.provider.as_deref(), q.model.as_deref()).await).unwrap();
+    v["configured"] = json!(s.cfg.ai.provider);
+    v["choices"] = json!(crate::ai::choices(&s).await);
+    Json(v)
+}
+
+#[derive(Deserialize)]
+struct AskBody {
+    /// process | alert | connection | overview | none
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    pid: Option<u32>,
+    #[serde(default)]
+    id: Option<i64>,
+    #[serde(default)]
+    remote: Option<String>,
+    #[serde(default)]
+    question: String,
+    #[serde(default)]
+    history: Vec<crate::ai::ChatTurn>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ProviderQuery {
+    provider: Option<String>,
+    model: Option<String>,
+}
+
+async fn ai_ask(State(s): S, Json(b): Json<AskBody>) -> Json<serde_json::Value> {
+    let (context, default_q) = match b.kind.as_str() {
+        "process" => (b.pid.and_then(|p| crate::ai::context_process(&s, p)), "What is this process, what is it doing, and should I worry?"),
+        "alert" => (b.id.and_then(|i| crate::ai::context_alert(&s, i)), "What does this alert mean, why did it fire, and what should I do?"),
+        "connection" => (b.pid.and_then(|p| crate::ai::context_connection(&s, p, b.remote.as_deref().unwrap_or(""))), "What is this connection for and is it safe?"),
+        "overview" => (Some(crate::ai::context_overview(&s)), "Summarise the state of my network: what is normal, what deserves attention, and what should I do first?"),
+        _ => (Some(crate::ai::context_overview(&s)), "Answer the question using the context."),
+    };
+    let Some(context) = context else {
+        return Json(json!({"ok": false, "error": "that item is no longer available"}));
+    };
+    let question = if b.question.trim().is_empty() { default_q.to_string() } else { b.question.clone() };
+    match crate::ai::ask(s.clone(), context, question.clone(), b.history, b.provider, b.model).await {
+        Ok((answer, st)) => Json(json!({"ok": true, "answer": answer, "provider": st.provider, "model": st.model, "local": st.local, "question": question})),
+        Err(e) => Json(json!({"ok": false, "error": e})),
+    }
+}
+
+async fn trusted_list(State(s): S) -> Json<serde_json::Value> {
+    let t = s.trusted.read();
+    Json(json!(t.iter().map(|(k, v)| json!({"exe": k, "sha256": v})).collect::<Vec<_>>()))
 }
 
 fn csv_escape(v: &str) -> String {

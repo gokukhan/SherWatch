@@ -90,12 +90,14 @@ pub struct Connection {
     pub lat: Option<f64>,
     pub lon: Option<f64>,
     pub hostname: Option<String>,
+    /// Well-known network owner (Microsoft, Google, Cloudflare...) from address ranges or hostname.
+    pub owner: Option<&'static str>,
     pub intel: Option<String>,
     pub flags: Vec<String>,
     pub risk: u32,
     #[serde(skip)]
     pub last_table_seen: i64,
-    #[serde(skip)]
+    /// Seen only through ETW (never in the socket table), e.g. UDP flows.
     pub from_etw: bool,
 }
 
@@ -131,6 +133,8 @@ pub struct ProcessInfo {
     pub parent_name: String,
     pub start_time: i64,
     pub user: String,
+    /// Windows services hosted in this process (svchost shows what it really is).
+    pub services: Vec<String>,
     pub first_net_seen: i64,
     pub last_seen: i64,
     pub bytes_out: u64,
@@ -167,6 +171,7 @@ impl ProcessInfo {
             parent_name: String::new(),
             start_time: 0,
             user: String::new(),
+            services: vec![],
             first_net_seen: now,
             last_seen: now,
             bytes_out: 0,

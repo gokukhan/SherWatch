@@ -1,10 +1,12 @@
 mod actions;
+mod ai;
 mod analysis;
 mod collectors;
 mod config;
 mod db;
 mod geo;
 mod intel;
+mod inventory;
 mod model;
 mod server;
 mod state;
@@ -116,6 +118,7 @@ async fn main() -> anyhow::Result<()> {
     }
     collectors::vt::start(state.clone());
     analysis::start(state.clone());
+    inventory::start(state.clone());
 
     // Home location for the globe.
     {

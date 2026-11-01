@@ -74,6 +74,7 @@ struct ProcSnap {
     parent_name: String,
     flags: Vec<String>,
     sig: SigStatus,
+    trusted: bool,
     info_loaded: bool,
     out_60: u64,
     out_300: u64,
@@ -101,6 +102,7 @@ fn run_rules(state: &AppState) {
                     parent_name: p.parent_name.to_ascii_lowercase(),
                     flags: p.path_flags.clone(),
                     sig: p.meta.sig,
+                    trusted: !p.exe.is_empty() && state.is_trusted(&p.exe, p.meta.sha256.as_deref()),
                     info_loaded: p.info_loaded,
                     out_60: p.out_last(60),
                     out_300: p.out_last(300),
@@ -140,11 +142,14 @@ fn run_rules(state: &AppState) {
         if !p.info_loaded {
             continue;
         }
+        // Trusted executables (exact hash) skip the reputation rules below; intel, beaconing,
+        // exfiltration and port rules still apply to them.
+        let trusted = p.trusted;
 
         // R04 unsigned / invalid signature talking to the internet
         // (Store apps under WindowsApps are signed at package level, not per file.)
         let store_app = p.flags.iter().any(|f| f == "store-app");
-        if matches!(p.sig, SigStatus::NotSigned | SigStatus::Invalid) && !(store_app && p.sig == SigStatus::NotSigned) {
+        if !trusted && matches!(p.sig, SigStatus::NotSigned | SigStatus::Invalid) && !(store_app && p.sig == SigStatus::NotSigned) {
             let sev = if p.sig == SigStatus::Invalid || util::is_user_writable_location(&p.flags) { Severity::High } else { Severity::Medium };
             state.push_alert(
                 sev,
@@ -157,7 +162,7 @@ fn run_rules(state: &AppState) {
         }
 
         // R05 suspicious executable location
-        if util::is_user_writable_location(&p.flags) {
+        if !trusted && util::is_user_writable_location(&p.flags) {
             state.push_alert(
                 Severity::High,
                 "R05-suspicious-path",
@@ -237,7 +242,7 @@ fn run_rules(state: &AppState) {
         }
 
         // R20 hard-coded IP: unsigned process, public IP, no DNS query seen (needs ETW DNS capture)
-        if etw && uptime > 120_000 && c.hostname.is_none() && !state.dns_seen_ips.contains(&c.remote_addr)
+        if etw && !trusted && uptime > 120_000 && c.hostname.is_none() && !state.dns_seen_ips.contains(&c.remote_addr)
             && matches!(p.sig, SigStatus::NotSigned | SigStatus::Invalid) && now - c.first_seen > 5_000
         {
             state.push_alert(
@@ -327,21 +332,29 @@ fn run_rules(state: &AppState) {
             }
         }
 
-        // R14 new listener from a non-system process
+        // R14 new listener from a non-system process. Fires once per executable and port per session.
         for l in state.listeners.iter() {
-            if l.pid != p.pid || now - l.first_seen > 90_000 || uptime < 15_000 || !p.info_loaded || p.sig == SigStatus::Pending {
+            if l.pid != p.pid || uptime < 15_000 || !p.info_loaded || p.sig == SigStatus::Pending {
                 continue;
             }
             if l.addr.is_loopback() {
                 continue;
             }
-            // Local discovery protocols (mDNS, SSDP, LLMNR, WS-Discovery, NetBIOS, DHCP) are normal client behaviour.
-            let discovery = l.proto == Proto::Udp && matches!(l.port, 5353 | 1900 | 5355 | 3702 | 137 | 138 | 67 | 68 | 5050 | 1024..=1030);
-            let suspicious = util::is_user_writable_location(&p.flags) || p.sig != SigStatus::Valid;
-            if (p.flags.iter().any(|f| f == "system") && p.sig == SigStatus::Valid) || (discovery && !suspicious) {
+            let seen_key = format!("{}|{}|{}", p.exe.to_ascii_lowercase(), l.proto.as_str(), l.port);
+            if !state.seen_listeners.insert(seen_key) {
                 continue;
             }
-            let sev = if suspicious { Severity::High } else if l.proto == Proto::Udp { Severity::Info } else { Severity::Low };
+            // Local discovery protocols (mDNS, SSDP, LLMNR, WS-Discovery, NetBIOS, DHCP) are normal client behaviour.
+            // Store apps (WindowsApps) are package-signed; treat an unsigned file there as signed for this rule.
+            let discovery = l.proto == Proto::Udp && matches!(l.port, 5353 | 1900 | 5355 | 3702 | 137 | 138 | 67 | 68 | 5050 | 1024..=1030);
+            let store_app = p.flags.iter().any(|f| f == "store-app");
+            let signed_ok = p.sig == SigStatus::Valid || (store_app && p.sig == SigStatus::NotSigned) || p.trusted;
+            let suspicious = !signed_ok || util::is_user_writable_location(&p.flags);
+            if (p.flags.iter().any(|f| f == "system") && signed_ok) || (discovery && !suspicious) {
+                continue;
+            }
+            // Signed software opening a port is informational; unsigned or oddly located software is the real signal.
+            let sev = if suspicious { Severity::High } else { Severity::Info };
             state.push_alert(
                 sev,
                 "R14-new-listener",
@@ -444,7 +457,7 @@ fn run_rules(state: &AppState) {
             continue;
         }
         let Some(p) = procs.get(&pid) else { continue };
-        if p.sig == SigStatus::Valid || !p.info_loaded {
+        if p.sig == SigStatus::Valid || !p.info_loaded || p.trusted {
             continue;
         }
         if util::is_user_writable_location(&p.flags) {

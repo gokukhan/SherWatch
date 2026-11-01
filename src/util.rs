@@ -70,6 +70,95 @@ pub fn ip_scope(ip: &IpAddr) -> &'static str {
     }
 }
 
+/// Approximate owner of well-known cloud and vendor address ranges. Coarse by design:
+/// it labels the big networks a Windows PC talks to all day so they read as what they are.
+pub fn ip_owner(ip: &IpAddr) -> Option<&'static str> {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            let n = u32::from(*v4);
+            let in_net = |net: [u8; 4], bits: u32| (n >> (32 - bits)) == (u32::from(Ipv4Addr::from(net)) >> (32 - bits));
+            if in_net([13, 64, 0, 0], 11) || in_net([13, 104, 0, 0], 14) || in_net([20, 33, 0, 0], 16) || in_net([20, 34, 0, 0], 15) || in_net([20, 36, 0, 0], 14) || in_net([20, 40, 0, 0], 13) || in_net([20, 48, 0, 0], 12) || in_net([20, 64, 0, 0], 10) || in_net([20, 128, 0, 0], 16) || in_net([20, 184, 0, 0], 13) || in_net([20, 192, 0, 0], 10) || in_net([40, 64, 0, 0], 10) || in_net([51, 104, 0, 0], 15) || in_net([52, 96, 0, 0], 12) || in_net([52, 112, 0, 0], 14) || in_net([52, 136, 0, 0], 13) || in_net([52, 145, 0, 0], 16) || in_net([52, 146, 0, 0], 15) || in_net([52, 148, 0, 0], 14) || in_net([52, 152, 0, 0], 13) || in_net([52, 160, 0, 0], 11) || in_net([104, 40, 0, 0], 13) || in_net([104, 208, 0, 0], 13) || in_net([23, 96, 0, 0], 13) || in_net([131, 253, 0, 0], 16) || in_net([204, 79, 197, 0], 24) || in_net([150, 171, 0, 0], 16) || in_net([4, 144, 0, 0], 12) || in_net([4, 160, 0, 0], 11) || in_net([4, 192, 0, 0], 10) {
+                return Some("Microsoft");
+            }
+            if in_net([8, 8, 8, 0], 24) || in_net([8, 8, 4, 0], 24) || in_net([34, 64, 0, 0], 10) || in_net([35, 184, 0, 0], 13) || in_net([35, 192, 0, 0], 11) || in_net([35, 224, 0, 0], 12) || in_net([64, 233, 160, 0], 19) || in_net([66, 102, 0, 0], 20) || in_net([74, 125, 0, 0], 16) || in_net([108, 177, 0, 0], 17) || in_net([142, 250, 0, 0], 15) || in_net([172, 217, 0, 0], 16) || in_net([173, 194, 0, 0], 16) || in_net([209, 85, 128, 0], 17) || in_net([216, 58, 192, 0], 19) || in_net([216, 239, 32, 0], 19) {
+                return Some("Google");
+            }
+            if in_net([1, 1, 1, 0], 24) || in_net([1, 0, 0, 0], 24) || in_net([104, 16, 0, 0], 12) || in_net([172, 64, 0, 0], 13) || in_net([162, 158, 0, 0], 15) || in_net([188, 114, 96, 0], 20) || in_net([141, 101, 64, 0], 18) || in_net([190, 93, 240, 0], 20) || in_net([198, 41, 128, 0], 17) {
+                return Some("Cloudflare");
+            }
+            if in_net([3, 0, 0, 0], 9) || in_net([3, 128, 0, 0], 9) || in_net([13, 32, 0, 0], 12) || in_net([13, 224, 0, 0], 14) || in_net([15, 160, 0, 0], 11) || in_net([18, 128, 0, 0], 9) || in_net([18, 32, 0, 0], 11) || in_net([34, 192, 0, 0], 10) || in_net([35, 152, 0, 0], 13) || in_net([44, 192, 0, 0], 10) || in_net([52, 0, 0, 0], 10) || in_net([52, 64, 0, 0], 11) || in_net([54, 64, 0, 0], 10) || in_net([54, 144, 0, 0], 12) || in_net([54, 160, 0, 0], 11) || in_net([54, 192, 0, 0], 10) || in_net([99, 77, 128, 0], 17) || in_net([99, 84, 0, 0], 16) || in_net([108, 128, 0, 0], 13) || in_net([143, 204, 0, 0], 16) || in_net([205, 251, 192, 0], 18) {
+                return Some("Amazon AWS");
+            }
+            if in_net([23, 0, 0, 0], 12) || in_net([23, 32, 0, 0], 11) || in_net([23, 64, 0, 0], 14) || in_net([23, 192, 0, 0], 11) || in_net([104, 64, 0, 0], 10) || in_net([184, 24, 0, 0], 13) || in_net([184, 50, 0, 0], 15) || in_net([2, 16, 0, 0], 13) || in_net([95, 100, 0, 0], 15) || in_net([96, 16, 0, 0], 15) || in_net([72, 246, 0, 0], 15) {
+                return Some("Akamai");
+            }
+            if o[0] == 17 {
+                return Some("Apple");
+            }
+            if in_net([31, 13, 24, 0], 21) || in_net([31, 13, 64, 0], 18) || in_net([157, 240, 0, 0], 16) || in_net([69, 171, 224, 0], 19) || in_net([66, 220, 144, 0], 20) || in_net([179, 60, 192, 0], 22) || in_net([185, 60, 216, 0], 22) || in_net([163, 70, 128, 0], 17) {
+                return Some("Meta");
+            }
+            if in_net([155, 133, 224, 0], 19) || in_net([162, 254, 192, 0], 21) || in_net([205, 196, 6, 0], 24) || in_net([208, 64, 200, 0], 22) {
+                return Some("Valve / Steam");
+            }
+            if in_net([151, 101, 0, 0], 16) || in_net([199, 232, 0, 0], 16) || in_net([146, 75, 0, 0], 16) {
+                return Some("Fastly");
+            }
+            None
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return ip_owner(&IpAddr::V4(v4));
+            }
+            let s = v6.segments();
+            if s[0] == 0x2603 && (0x1000..=0x10ff).contains(&s[1]) || s[0] == 0x2a01 && (s[1] == 0x0110 || s[1] == 0x0111) || s[0] == 0x2620 && s[1] == 0x01ec || s[0] == 0x2a01 && s[1] == 0x0111 {
+                return Some("Microsoft");
+            }
+            if s[0] == 0x2607 && s[1] == 0xf8b0 || s[0] == 0x2a00 && s[1] == 0x1450 || s[0] == 0x2001 && s[1] == 0x4860 || s[0] == 0x2404 && s[1] == 0x6800 || s[0] == 0x2600 && s[1] == 0x1900 {
+                return Some("Google");
+            }
+            if s[0] == 0x2606 && s[1] == 0x4700 || s[0] == 0x2a06 && (s[1] & 0xfff8) == 0x98c0 || s[0] == 0x2803 && s[1] == 0xf800 || s[0] == 0x2405 && (s[1] == 0x8100 || s[1] == 0xb500) {
+                return Some("Cloudflare");
+            }
+            if s[0] == 0x2600 && (s[1] & 0xff00) == 0x1f00 || s[0] == 0x2600 && s[1] == 0x9000 || s[0] == 0x2a05 && (s[1] & 0xfff8) == 0xd018 || s[0] == 0x2406 && s[1] == 0xda00 {
+                return Some("Amazon AWS");
+            }
+            if s[0] == 0x2a02 && s[1] == 0x26f0 || s[0] == 0x2600 && s[1] == 0x1400 || s[0] == 0x2600 && s[1] == 0x1480 {
+                return Some("Akamai");
+            }
+            if s[0] == 0x2620 && s[1] == 0x0149 || s[0] == 0x2a01 && s[1] == 0xb740 {
+                return Some("Apple");
+            }
+            if s[0] == 0x2a03 && s[1] == 0x2880 {
+                return Some("Meta");
+            }
+            if s[0] == 0x2a04 && (s[1] & 0xfff8) == 0x4e40 {
+                return Some("Fastly");
+            }
+            None
+        }
+    }
+}
+
+pub fn owner_from_hostname(host: &str) -> Option<&'static str> {
+    let h = host.to_ascii_lowercase();
+    let table: &[(&str, &str)] = &[
+        ("1e100.net", "Google"), ("googleusercontent.com", "Google"), ("google.com", "Google"), ("gvt1.com", "Google"), ("youtube.com", "Google"),
+        ("amazonaws.com", "Amazon AWS"), ("cloudfront.net", "Amazon CloudFront"), ("akamaitechnologies.com", "Akamai"), ("akamaiedge.net", "Akamai"), ("akadns.net", "Akamai"),
+        ("microsoft.com", "Microsoft"), ("msedge.net", "Microsoft"), ("azure.com", "Microsoft"), ("windows.net", "Microsoft"), ("azureedge.net", "Microsoft"), ("trafficmanager.net", "Microsoft"), ("office.net", "Microsoft"), ("live.com", "Microsoft"), ("windowsupdate.com", "Microsoft"), ("msn.com", "Microsoft"), ("bing.com", "Microsoft"), ("office365.com", "Microsoft"), ("microsoftonline.com", "Microsoft"),
+        ("cloudflare.com", "Cloudflare"), ("cloudflare.net", "Cloudflare"), ("apple.com", "Apple"), ("icloud.com", "Apple"), ("aaplimg.com", "Apple"),
+        ("fbcdn.net", "Meta"), ("facebook.com", "Meta"), ("instagram.com", "Meta"), ("whatsapp.net", "Meta"), ("steamserver.net", "Valve / Steam"), ("steamcontent.com", "Valve / Steam"), ("steampowered.com", "Valve / Steam"),
+        ("fastly.net", "Fastly"), ("discord.gg", "Discord"), ("discordapp.com", "Discord"), ("discord.com", "Discord"), ("anthropic.com", "Anthropic"), ("claude.ai", "Anthropic"), ("openai.com", "OpenAI"), ("github.com", "GitHub"), ("githubusercontent.com", "GitHub"), ("mozilla.net", "Mozilla"), ("mozilla.com", "Mozilla"), ("mozilla.org", "Mozilla"), ("teamviewer.com", "TeamViewer"), ("anydesk.com", "AnyDesk"), ("nvidia.com", "NVIDIA"), ("epicgames.com", "Epic Games"), ("oculus.com", "Meta"), ("meta.com", "Meta"),
+    ];
+    for (suffix, owner) in table {
+        if h == *suffix || h.ends_with(&format!(".{suffix}")) {
+            return Some(owner);
+        }
+    }
+    None
+}
+
 pub fn normalize_ip(ip: IpAddr) -> IpAddr {
     if let IpAddr::V6(v6) = ip {
         if let Some(v4) = v6.to_ipv4_mapped() {

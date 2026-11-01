@@ -15,7 +15,7 @@ use std::path::PathBuf;
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SUPPORTED_KINDS: &[&str] = &[
-    "csv_ip", "ip_lines", "cidr_lines", "ipsum", "domain_lines", "url_lines", "hosts_lines", "json_ip",
+    "csv_ip", "ip_lines", "cidr_lines", "ipsum", "domain_lines", "url_lines", "hosts_lines", "json_ip", "kev",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,6 +56,7 @@ struct IntelData {
     ips: HashMap<IpAddr, String>,
     cidrs: Vec<(IpNet, String)>,
     domains: HashMap<String, String>,
+    kev: Vec<crate::inventory::KevEntry>,
     feeds: Vec<FeedStatus>,
     last_refresh: Option<i64>,
     update: UpdateStatus,
@@ -98,6 +99,10 @@ impl Intel {
 
     pub fn refresh_hours(&self) -> u64 {
         self.cfg.refresh_hours.max(1)
+    }
+
+    pub fn kev_entries(&self) -> Vec<crate::inventory::KevEntry> {
+        self.data.read().kev.clone()
     }
 
     /// Returns the feed name when the IP is listed.
@@ -393,6 +398,18 @@ fn parse_feed(feed: &FeedCfg, body: &str, ipsum_min: u32, out: &mut IntelData) -
                     out.domains.insert(host, name.clone());
                 }
                 n += 1;
+            }
+        }
+        "kev" => {
+            let path = std::path::Path::new("");
+            let _ = path;
+            #[derive(serde::Deserialize)]
+            struct Doc {
+                vulnerabilities: Vec<crate::inventory::KevEntry>,
+            }
+            if let Ok(d) = serde_json::from_str::<Doc>(body) {
+                n = d.vulnerabilities.len();
+                out.kev = d.vulnerabilities;
             }
         }
         "json_ip" => {

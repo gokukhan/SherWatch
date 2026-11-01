@@ -32,10 +32,12 @@ collectors, shared state, analysis, and the HTTP/WebSocket server.
 | `src/collectors/procinfo.rs` | Resolves PIDs with sysinfo (name, exe, command line, parent, user, start time). Signature worker: batches paths through `Get-AuthenticodeSignature` so catalog-signed Windows files verify, hashes files with SHA-256. Reverse-DNS worker. |
 | `src/collectors/vt.rs` | Optional VirusTotal v3 hash lookups, rate limited for free keys. |
 | `src/analysis/mod.rs` | The rule engine and the hosts-file check. See DETECTION-RULES.md. |
-| `src/intel.rs` | Feed download, parsing (CSV, IP lines, CIDR lines, IPsum, domain lines, hosts lines, URL lines, JSON), lookup sets, remote manifest, update-needed detection. |
+| `src/intel.rs` | Feed download, parsing (CSV, IP lines, CIDR lines, IPsum, domain lines, hosts lines, URL lines, JSON, CISA KEV), lookup sets, remote manifest, update-needed detection. |
+| `src/inventory.rs` | Software inventory: services, installed programs, executable version info and Windows patch state via one PowerShell query every 30 min; offline matching against the KEV catalogue; optional online CVE lookup (Shodan CVEDB) with 7-day cache; rules R24 to R26. Also maps svchost PIDs to the services they host. |
 | `src/geo.rs` | DB-IP Lite city lookups (maxminddb) and first-run download. |
 | `src/db.rs` | SQLite schema, a single writer thread fed by a channel, batched traffic inserts, 30-day pruning, history queries. |
 | `src/actions.rs` | taskkill, netsh advfirewall add/delete rule. |
+| `src/ai.rs` | Assistant: builds factual context (process, alert, connection, overview) and queries a model. Providers: free keyless web models (pollinations.ai, OpenAI-compatible), local Ollama (`/api/chat`), Anthropic Messages API (raw HTTP, `claude-opus-5-5`, low effort, server-side fallbacks), any OpenAI-compatible endpoint. The dropdown choices come from `/api/ai/status`. |
 | `src/server.rs` | axum router, JSON API, CSV/JSON exports, WebSocket broadcast, embedded assets (rust-embed). |
 | `web/` | Dashboard: `index.html`, `styles.css`, `app.js`, vendored libraries. |
 
@@ -129,6 +131,9 @@ mutate. `parking_lot` locks are not reentrant.
 | GET | `/api/geo` | destinations aggregated per remote IP, for the globe |
 | GET | `/api/home` | home coordinates for the globe |
 | GET | `/api/listeners` | listening sockets |
+| GET | `/api/inventory`, POST `/api/inventory/scan`, POST `/api/inventory/cve-lookup` | software inventory, rescan, opt-in online CVE lookup |
+| GET | `/api/ai/status?provider=&model=`, POST `/api/ai/ask` | assistant status and model choices; ask with `{kind, pid|id|remote, question, history, provider, model}` |
+| GET | `/api/trusted`, POST `/api/action/trust`, `/api/action/untrust` | trust list |
 | GET | `/api/intel`, POST `/api/intel/refresh` | feed status and update-needed state |
 | GET | `/api/config` | effective configuration (API key masked) |
 | GET | `/api/history/traffic?hours=`, `/api/history/alerts?hours=`, `/api/history/connections?hours=&limit=` | SQLite history |

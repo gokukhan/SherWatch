@@ -12,6 +12,11 @@
 | Tor exit nodes | SecOps-Institute mirror of the Tor exit list | Public | https://github.com/SecOps-Institute/Tor-IP-Addresses |
 | Blackbook | Malicious domains | Unlicense | https://github.com/stamparm/blackbook |
 | OpenPhish | Community phishing feed | Free for non-commercial use | https://openphish.com/ |
+| CISA Known Exploited Vulnerabilities | Catalogue of vulnerabilities with evidence of active exploitation | Public domain (US government work) | https://www.cisa.gov/known-exploited-vulnerabilities-catalog |
+| Shodan CVEDB (optional, on demand) | CVE and CPE lookup for exact product versions | Free API, see shodan.io terms | https://cvedb.shodan.io/ |
+| Pollinations.ai (assistant default) | Free keyless text models, OpenAI-compatible | Free community service, see pollinations.ai terms | https://pollinations.ai/ |
+| Ollama (assistant, optional) | Local model runtime | MIT | https://ollama.com/ |
+| Anthropic / OpenAI-compatible APIs (assistant, optional) | Cloud models with your own key | Provider terms | - |
 | VirusTotal (optional) | File hash reputation | Requires your own API key and acceptance of VirusTotal terms | https://www.virustotal.com/ |
 | api.ipify.org (optional) | Public IP for the globe's home marker | Public | https://www.ipify.org/ |
 

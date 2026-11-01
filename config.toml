@@ -82,3 +82,32 @@ api_key = ""
 # DB-IP Lite city database (CC BY 4.0, https://db-ip.com). Downloaded automatically when missing.
 mmdb = "data/geo/dbip-city-lite.mmdb"
 download_url = "https://download.db-ip.com/free/dbip-city-lite-{YYYY}-{MM}.mmdb.gz"
+
+[[intel.feeds]]
+name = "CISA Known Exploited Vulnerabilities"
+url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+kind = "kev"
+file = "kev.json"
+
+[vuln]
+# Look up CVEs for exact product versions through Shodan's free CVEDB after every inventory
+# scan. Sends product names and version numbers, never files. Off by default; the Inventory
+# view has a button to run it on demand.
+online_lookup = false
+
+[ai]
+# Built-in analyst assistant ("explain this process / alert", "summarise my network").
+# provider: free | auto | ollama | openai | anthropic | off
+#   free      -> free web model (pollinations.ai), no account or key needed. Default.
+#   auto      -> same as free.
+#   ollama    -> local models. base_url defaults to http://127.0.0.1:11434; model is picked
+#                from the installed models when empty (ollama pull gemma3 to get one).
+#   openai    -> any OpenAI-compatible endpoint: Groq (https://api.groq.com/openai),
+#                OpenRouter (https://openrouter.ai/api), Gemini
+#                (https://generativelanguage.googleapis.com/v1beta/openai), LM Studio...
+#   anthropic -> Claude API (model defaults to claude-opus-5-5).
+# With a cloud provider the context (process names, hosts, alerts) is sent to that service.
+provider = "free"
+base_url = ""
+model = ""
+api_key = ""

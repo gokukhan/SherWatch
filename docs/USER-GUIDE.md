@@ -79,7 +79,11 @@ full command line, signer, SHA-256 (with a VirusTotal link you can open yourself
 location flags, traffic, listening sockets, the process's alerts with acknowledge buttons,
 its connections, its DNS queries and any repeated contacts (candidates for beaconing).
 **Terminate process** runs taskkill on the process tree. **Block in firewall** adds inbound
-and outbound block rules for the executable.
+and outbound block rules for the executable. **Trust this program** marks the exact file
+(by SHA-256) as known-good: the unsigned-program, suspicious-location, hard-coded-IP and
+new-listener rules stop firing for it, while threat-intel, beaconing, exfiltration and port
+rules still apply. A replaced or updated file has a new hash and alerts again until you
+re-trust it. The trust list is in Settings and in `data/trusted.json`.
 
 ## Alerts
 
@@ -96,6 +100,63 @@ Critical and high alerts also pop up as toasts in the bottom-right corner on eve
 Live DNS queries captured from the Windows DNS client, per process, with type, status,
 and answers, plus a chart of the most queried domains. Needs packet capture. Queries for
 domains in a threat feed carry an **intel** tag and raise a critical alert.
+
+## Inventory
+
+Software on this PC and its vulnerability exposure, collected every 30 minutes (or with
+**Rescan**):
+
+- **Windows**: edition, build, the date of the last installed update with its age, and the
+  Windows vulnerabilities CISA catalogued as actively exploited after that date (meaning
+  the fix is probably not installed yet).
+- **Exposure summary**: counts of items with exploited history and items that look
+  unpatched, and the state of the online check.
+- **The table**: every network-active executable (with product name, version and publisher
+  read from the file), every Windows service with its binary, and every installed program
+  from the registry. "KEV" tags show how many entries of CISA's Known Exploited
+  Vulnerabilities catalogue name that product. Red means the file on disk predates at
+  least one of them (likely unpatched); orange means the file is newer than all of them.
+  Click a row to see the entries with links to NVD.
+
+**Check CVEs online** is opt-in because it sends product names and versions to Shodan's
+free CVEDB. It finds the CPE for each product, queries published CVEs for the exact
+installed version, and tags items with the count and the worst CVSS score. Results are
+cached for seven days. Set `online_lookup = true` under `[vuln]` in `config.toml` to run it
+automatically after every scan.
+
+Processes named svchost.exe show the Windows services they host (for example
+`svchost.exe (WpnService)`), and destinations show the owner of well-known networks
+(Microsoft, Google, Cloudflare, Amazon, Akamai, Apple, Meta...) next to the country.
+
+## Assistant
+
+A built-in analyst that answers the questions you would otherwise ask a security person:
+"what is this process?", "why was this flagged?", "is this connection safe?", "summarise my
+network". Every ✦ button (process drawer, process rows, connection rows, alerts) opens the
+Assistant with the facts about that item already attached: path, signature, publisher and
+version, parent, hosted services, connections with hostnames and network owners, DNS,
+alerts with rule meanings, vulnerability matches. The answer ends with a verdict and a
+recommended action.
+
+The dropdown picks which model answers:
+
+- **Free web models** (default): a keyless public service (pollinations.ai), no account
+  needed. The facts about the item are sent to that service.
+- **Local Ollama models**: every model installed in Ollama on this PC appears here. Fully
+  offline, nothing leaves the machine. Start the Ollama app first.
+- **Anthropic Claude** or any **OpenAI-compatible** service (Groq, OpenRouter, Gemini, LM
+  Studio): appear once `api_key` (and `base_url`, `model`) are set under `[ai]` in
+  `config.toml`.
+
+The chat keeps the last few turns as context, so follow-up questions work. "Summarise my
+network now" sends the whole picture: rates, top talkers, open alerts, risky processes,
+Windows patch state and software with exploited vulnerabilities.
+
+## Sorting tables
+
+Click any column header to sort that table; click again to flip the direction. Sorting
+understands bytes (1.2 MB), ages (3m, 2h 10m), risk meters and numbers. The sort stays
+applied while the table refreshes.
 
 ## History
 

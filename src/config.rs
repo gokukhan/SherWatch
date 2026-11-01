@@ -13,6 +13,40 @@ pub struct Config {
     pub virustotal: VtCfg,
     #[serde(default)]
     pub geo: GeoCfg,
+    #[serde(default)]
+    pub vuln: VulnCfg,
+    #[serde(default)]
+    pub ai: AiCfg,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AiCfg {
+    /// auto | ollama | openai | anthropic | off
+    #[serde(default = "d_auto")]
+    pub provider: String,
+    /// Ollama: http://127.0.0.1:11434 (default). OpenAI-compatible: the API root, e.g. https://api.groq.com/openai
+    #[serde(default)]
+    pub base_url: String,
+    /// Model name. Ollama: picked automatically from installed models when empty.
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub api_key: String,
+}
+impl Default for AiCfg {
+    fn default() -> Self {
+        Self { provider: d_auto(), base_url: String::new(), model: String::new(), api_key: String::new() }
+    }
+}
+fn d_auto() -> String { "auto".into() }
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct VulnCfg {
+    /// Look up CVEs for exact product versions through Shodan's free CVEDB after every
+    /// inventory scan. Sends product names and version numbers (never file contents).
+    /// Off by default; the dashboard has a button to run it on demand.
+    #[serde(default)]
+    pub online_lookup: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -48,6 +82,10 @@ pub struct AnalysisCfg {
     pub watch_countries: Vec<String>,
     #[serde(default = "d_true")]
     pub reverse_dns: bool,
+    /// Executables you vouch for: "path|sha256" entries written by the Trust button. Suppresses the
+    /// unsigned / suspicious-path rules for that exact file; a changed file alerts again.
+    #[serde(default)]
+    pub trusted: Vec<String>,
 }
 impl Default for AnalysisCfg {
     fn default() -> Self {
@@ -60,6 +98,7 @@ impl Default for AnalysisCfg {
             beacon_max_cv: d_beacon_cv(),
             watch_countries: vec![],
             reverse_dns: true,
+            trusted: vec![],
         }
     }
 }
