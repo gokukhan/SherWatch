@@ -179,15 +179,10 @@ dashboard headlessly through Microsoft Edge (or Chrome), prints layout metrics (
 width versus client width catches horizontal clipping) and any console errors.
 `SHOT_SCALE=2` renders at 2x. `tmp/` is ignored by git.
 
-## Presentation and explainer video
+## Presentation
 
-`docs/presentation/` holds the HTML deck (`index.html`, 18 slides) and its PDF
-(`SherWatch-Command-Center.pdf`), the deck screenshots in `img/` (1600x1000), the video
-screenshots in `img/video/` (3200x2000, device scale 2, each with a `.json` of element
-rectangles), `VIDEO-SCRIPT.md` (the storyboard), `narration.json` (the spoken lines, one per
-scene), `Natural_Ambience_60s.mp3` (background track) and the two rendered videos
-`SherWatch-short.mp4` (1080x1920) and `SherWatch-short-landscape.mp4` (1920x1080), 16 scenes
-and about 1:55 each.
+`docs/presentation/` holds the HTML deck (`index.html`, 18 slides), its PDF
+(`SherWatch-Command-Center.pdf`) and the deck screenshots in `img/` (1600x1000).
 
 The PDF is printed from the HTML with headless Edge, one 1600x1000 page per slide:
 
@@ -200,20 +195,5 @@ The PDF is printed from the HTML with headless Edge, one 1600x1000 page per slid
 
 Check afterwards that the page count equals the slide count (pypdf: `len(PdfReader(p).pages)`).
 
-- `python tools/video_shots.py [shot ...]` captures the staged video screenshots from the
-  running app on 127.0.0.1:8787 (it drives the dashboard through its test hooks; default: all
-  shots).
-- `python tools/make_video.py` renders the portrait video; `--landscape` the landscape one,
-  `--silent` without narration, `--sapi` with the offline Windows voice "Microsoft David"
-  instead of OpenAI, `--preview` a contact sheet (`tmp/video-preview.png`) instead of an
-  encode, `--frame <scene> <t>` a single frame of one scene at time `t` (also written to
-  `tmp/video-preview.png`) for a layout check.
-  ffmpeg comes from `tools/npm` (ffmpeg-static; run `npm install` there once).
-
-Narration uses OpenAI text-to-speech (voice "echo"). The key is read from the
-`OPENAI_API_KEY` environment variable or `data/openai.key` (gitignored) and only needs the
-text-to-speech permission. Clips are cached in `tmp/video-audio`, keyed by the spoken text, so only
-changed lines are re-synthesised. The narration text is sent to api.openai.com; nothing else leaves the PC.
-
-Commit the rendered videos only when they change for good: each re-render adds tens of MB
-to the repository.
+The explainer video, its storyboard, narration and the scripts that render it are kept
+outside the repository (ignored by git); the app and its documentation are what is published.

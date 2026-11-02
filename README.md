@@ -191,8 +191,8 @@ data/geo/            DB-IP Lite city database
 data/sherwatch.db    SQLite history (alerts, traffic, connections, DNS, blocks, known apps)
 data/logs/           log output when started through run.cmd or run.sh
 docs/                documentation
-tools/               rustup installer, npm packages (frontend libraries, Tauri CLI, ffmpeg),
-                     screenshot and explainer-video scripts
+tools/               rustup installer, npm packages (frontend libraries, Tauri CLI),
+                     icon and screenshot scripts
 .github/workflows/   CI: cargo check on all three OSes, installers on tags
 ```
 
@@ -205,8 +205,8 @@ tools/               rustup installer, npm packages (frontend libraries, Tauri C
 - [docs/BUILDING.md](docs/BUILDING.md): building from source on each OS, CI and releases.
 - [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md): licences and data-source attributions.
 - [LICENSE](LICENSE) and [NOTICE](NOTICE): the project licence (Apache 2.0) and the attribution to keep.
-- [docs/presentation/](docs/presentation/): the slide deck (HTML and PDF), the explainer video
-  (portrait and landscape) and its storyboard; how they are made is in docs/BUILDING.md.
+- [docs/presentation/](docs/presentation/): the slide deck (HTML and PDF); how it is made is in
+  docs/BUILDING.md.
 
 ## Privacy
 

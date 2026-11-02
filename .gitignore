@@ -5,3 +5,13 @@
 /tools/rustup/
 *.log
 __pycache__/
+
+# Explainer video and narration: generated locally, not part of the app
+/tools/make_video.py
+/tools/video_shots.py
+/docs/presentation/*.mp4
+/docs/presentation/*.mp3
+/docs/presentation/*.wav
+/docs/presentation/VIDEO-SCRIPT.md
+/docs/presentation/narration.json
+/docs/presentation/img/video/

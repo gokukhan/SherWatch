@@ -115,7 +115,7 @@ jobs:
           node-version: 22
 
       # The Tauri CLI is pinned in tools/npm/package-lock.json. --ignore-scripts skips
-      # ffmpeg-static's binary download (only tools/make_video.py needs it).
+      # every package's install hook; nothing here needs one.
       - name: Install Tauri CLI
         working-directory: tools/npm
         run: npm ci --ignore-scripts
