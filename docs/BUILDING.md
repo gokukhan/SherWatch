@@ -106,7 +106,9 @@ and the app must be opened once with right-click, **Open** (a Developer ID certi
 notarisation remove that step); Linux packages carry no signature by convention.
 
 The app icon is drawn by `tools/make_icon.py` (Pillow) and the icon set under
-`desktop/icons` is generated with `npx --prefix tools/npm tauri icon desktop/app-icon.png -o desktop/icons`.
+`desktop/app-icon.png` (1024 px, the eye mark) is the icon source; `desktop/icons` is generated from it with
+`npx --prefix tools/npm tauri icon desktop/app-icon.png -o desktop/icons` (delete the `android/` and `ios/`
+folders it also creates). The design files that produce the PNG are kept outside the repository.
 
 Development run of the desktop version (debug build, reads `web/` from disk):
 

@@ -15,3 +15,6 @@ __pycache__/
 /docs/presentation/VIDEO-SCRIPT.md
 /docs/presentation/narration.json
 /docs/presentation/img/video/
+
+# Design process (icon candidates, previews, generators); only the final icons are committed
+/design/

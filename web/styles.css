@@ -38,8 +38,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- nav ---------- */
 #nav { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 18px 16px 14px; }
-.brand-mark { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--accent); position: relative; box-shadow: 0 0 18px rgba(57,135,229,0.45); }
-.brand-mark::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: var(--accent); }
+.brand-mark { width: 32px; height: 32px; flex: none; filter: drop-shadow(0 0 9px rgba(57,135,229,0.55)); }
 .brand-name { font-weight: 650; letter-spacing: 0.2px; }
 .brand-sub { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.2px; }
 nav { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; }
